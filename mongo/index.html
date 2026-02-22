@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mongo ↔ Spring @Aggregation Formatter</title>
+    <link rel="stylesheet" href="/css/common.css">
+    <style>
+        /* Syntax highlighting colors */
+        :root, [data-theme="light"] {
+            --hl-key: #660e7a;
+            --hl-string: #067d17;
+            --hl-number: #1750eb;
+            --hl-bool: #000080;
+            --hl-null: #000080;
+            --hl-operator: #0033b3;
+            --hl-bracket: #0f172a;
+            --hl-param: #aa4926;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --hl-key: #9876aa;
+                --hl-string: #6a8759;
+                --hl-number: #6897bb;
+                --hl-bool: #cc7832;
+                --hl-null: #cc7832;
+                --hl-operator: #cc7832;
+                --hl-bracket: #e5e7eb;
+                --hl-param: #ffc66d;
+            }
+        }
+        [data-theme="dark"] {
+            --hl-key: #9876aa;
+            --hl-string: #6a8759;
+            --hl-number: #6897bb;
+            --hl-bool: #cc7832;
+            --hl-null: #cc7832;
+            --hl-operator: #cc7832;
+            --hl-bracket: #e5e7eb;
+            --hl-param: #ffc66d;
+        }
+
+        /* Page layout */
+        body {
+            padding: .75rem 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: .5rem;
+            min-height: 100vh;
+        }
+        h1 {
+            font-size: 1.2rem;
+            text-align: center;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: .75rem;
+            flex: 1;
+            min-height: 0;
+        }
+        @media (min-width: 900px) {
+            .grid { grid-template-columns: 1fr 1fr; gap: .5rem; }
+        }
+        .pane {
+            display: flex;
+            flex-direction: column;
+            gap: .35rem;
+            min-height: 0;
+        }
+        .pane-header {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            flex-wrap: wrap;
+        }
+        .pane-title {
+            font-weight: 600;
+            font-size: .9rem;
+            color: var(--muted);
+        }
+        .spacer { flex: 1; }
+        .row {
+            display: flex;
+            gap: .35rem;
+            align-items: center;
+        }
+
+        /* Textarea and output */
+        textarea, .output-area {
+            width: 100%;
+            flex: 1;
+            min-height: 150px;
+            padding: .5rem;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: .8rem;
+            line-height: 1.4;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            resize: vertical;
+            background: var(--surface);
+            color: var(--text);
+            tab-size: 2;
+        }
+        textarea:focus {
+            outline: 2px solid var(--primary);
+            outline-offset: -1px;
+        }
+        .output-area {
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        /* Buttons override */
+        button {
+            padding: .35rem .7rem;
+            border-radius: 5px;
+            font-size: .8rem;
+        }
+        button.alt { background: var(--muted); }
+        button.alt:hover { background: #5a6268; }
+        button.icon-btn {
+            padding: .25rem .45rem;
+            font-size: .75rem;
+        }
+        .toolbar {
+            display: flex;
+            gap: .4rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .shortcut-hint { display: none; }
+        @media (min-width: 600px) {
+            .shortcut-hint { display: inline; }
+        }
+
+        /* Syntax highlighting */
+        .hl-key { color: var(--hl-key); }
+        .hl-string { color: var(--hl-string); }
+        .hl-number { color: var(--hl-number); }
+        .hl-bool { color: var(--hl-bool); font-weight: 600; }
+        .hl-null { color: var(--hl-null); font-weight: 600; }
+        .hl-bracket { color: var(--hl-bracket); }
+        .hl-operator { color: var(--hl-operator); }
+        .hl-param { color: var(--hl-param); font-weight: 600; }
+
+        /* Editor with highlighting */
+        .editor-wrap {
+            position: relative;
+            flex: 1;
+            min-height: 150px;
+            display: flex;
+        }
+        .editor-wrap textarea {
+            position: absolute;
+            inset: 0;
+            background: transparent;
+            color: transparent;
+            caret-color: var(--text);
+            z-index: 2;
+            resize: none;
+        }
+        .editor-wrap .highlight-layer {
+            flex: 1;
+            padding: .5rem;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: .8rem;
+            line-height: 1.4;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--surface);
+            color: var(--text);
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow: auto;
+            tab-size: 2;
+        }
+        .editor-wrap textarea:focus + .highlight-layer {
+            outline: 2px solid var(--primary);
+            outline-offset: -1px;
+        }
+
+        /* Error display */
+        .error-box {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 8px;
+            padding: .75rem 1rem;
+            color: #991b1b;
+            font-size: .875rem;
+            margin-top: .5rem;
+            display: none;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) .error-box {
+                background: #450a0a;
+                border-color: #7f1d1d;
+                color: #fca5a5;
+            }
+        }
+        [data-theme="dark"] .error-box {
+            background: #450a0a;
+            border-color: #7f1d1d;
+            color: #fca5a5;
+        }
+        .error-box.show { display: block; }
+        .error-context {
+            font-family: monospace;
+            font-size: .8rem;
+            margin-top: .5rem;
+            padding: .5rem;
+            background: rgba(0,0,0,.05);
+            border-radius: 4px;
+            overflow-x: auto;
+            white-space: pre;
+        }
+        .error-caret { color: var(--danger); font-weight: bold; }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 1.5rem;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--text);
+            color: var(--bg);
+            padding: .6rem 1.2rem;
+            border-radius: 8px;
+            font-size: .875rem;
+            font-weight: 500;
+            opacity: 0;
+            transition: transform .3s ease, opacity .3s ease;
+            z-index: 1000;
+            pointer-events: none;
+        }
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+        .toast.success { background: var(--success); color: #fff; }
+        .toast.error { background: var(--danger); color: #fff; }
+
+        /* Modal */
+        dialog {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 22px 70px 4px rgba(0,0,0,.25);
+            padding: 1.25rem 1.5rem;
+            max-width: min(800px, 94vw);
+            max-height: 85vh;
+            overflow-y: auto;
+            background: var(--surface);
+            color: var(--text);
+        }
+        dialog::backdrop { background: rgba(0,0,0,.5); }
+        .dlg-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: .75rem;
+        }
+        .dlg-title { font-weight: 700; font-size: 1.1rem; }
+        .tokens {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: .6rem;
+            align-items: center;
+            margin-top: .5rem;
+        }
+        .tokens code {
+            background: var(--border);
+            padding: .3rem .6rem;
+            border-radius: 6px;
+            font-size: .85rem;
+            font-weight: 500;
+        }
+        .tokens input {
+            width: 100%;
+            padding: .5rem .6rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: .875rem;
+            background: var(--surface);
+            color: var(--text);
+        }
+        .tokens input:focus {
+            outline: 2px solid var(--primary);
+            outline-offset: -1px;
+        }
+        .tokens select {
+            padding: .45rem .5rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--surface);
+            color: var(--text);
+            font-size: .85rem;
+        }
+        .hint {
+            font-size: .85rem;
+            color: var(--muted);
+            margin-top: .25rem;
+            line-height: 1.5;
+        }
+        .dlg-footer {
+            display: flex;
+            gap: .5rem;
+            justify-content: flex-end;
+            margin-top: 1.25rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+        .kbd {
+            font-family: 'SF Mono', monospace;
+            background: var(--border);
+            border-radius: 4px;
+            padding: .15rem .4rem;
+            font-size: .8rem;
+        }
+
+        /* Swap button between panes */
+        .swap-row {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: .5rem 0;
+        }
+        @media (min-width: 900px) {
+            .swap-row { display: none; }
+        }
+    </style>
+</head>
+<body>
+<h1>Mongo &#8596; Spring @Aggregation Formatter</h1>
+
+<div class="row" style="justify-content: flex-end;">
+    <button id="themeToggle" class="icon-btn" title="Toggle dark/light mode">&#127763;</button>
+    <button id="goLegacy" class="alt" data-url="">Legacy &#8594;</button>
+</div>
+
+<div class="grid">
+    <div class="pane">
+        <div class="pane-header">
+            <span class="pane-title">Spring @Aggregation</span>
+            <span class="spacer"></span>
+            <button id="clearSpring" class="icon-btn" title="Clear">&#10005;</button>
+            <button id="copySpring" class="icon-btn" title="Copy to clipboard">&#128203;</button>
+            <button id="formatSpring" class="icon-btn" title="Format @Aggregation">{ }</button>
+        </div>
+        <div class="toolbar">
+            <button id="toMongo">&#8594; Convert to Mongo<span class="shortcut-hint">Ctrl+&#8594;</span></button>
+        </div>
+        <div class="editor-wrap">
+            <textarea id="springInput" spellcheck="false"></textarea>
+            <div id="springHighlight" class="highlight-layer"></div>
+        </div>
+        <div id="springError" class="error-box"></div>
+    </div>
+
+    <div class="swap-row">
+        <button id="swapBtn" class="icon-btn" title="Swap content">&#8645; Swap</button>
+    </div>
+
+    <div class="pane">
+        <div class="pane-header">
+            <span class="pane-title">MongoDB JSON</span>
+            <span class="spacer"></span>
+            <button id="clearMongo" class="icon-btn" title="Clear">&#10005;</button>
+            <button id="copyMongo" class="icon-btn" title="Copy to clipboard">&#128203;</button>
+            <button id="formatMongo" class="icon-btn" title="Format JSON">{ }</button>
+        </div>
+        <div class="toolbar">
+            <button id="toSpring">&#8592; Convert to Spring<span class="shortcut-hint">Ctrl+&#8592;</span></button>
+        </div>
+        <div class="editor-wrap">
+            <textarea id="mongoInput" spellcheck="false"></textarea>
+            <div id="mongoHighlight" class="highlight-layer"></div>
+        </div>
+        <div id="mongoError" class="error-box"></div>
+    </div>
+</div>
+
+<!-- Toast notification -->
+<div id="toast" class="toast"></div>
+
+<!-- Placeholder Modal -->
+<dialog id="dlg">
+    <form method="dialog" id="dlgForm">
+        <div class="dlg-head">
+            <div class="dlg-title">Substitute Placeholders</div>
+            <button value="cancel" class="alt" type="submit">&#10005;</button>
+        </div>
+        <div class="hint">
+            Values are parsed as JSON. Examples: <span class="kbd">42</span>, <span class="kbd">true</span>,
+            <span class="kbd">null</span>, <span class="kbd">"text"</span>, <span class="kbd">["a","b"]</span>,
+            <span class="kbd">ObjectId("...")</span>, <span class="kbd">ISODate("...")</span>
+        </div>
+        <div id="tokensWrap" class="tokens" style="margin-top: 1rem"></div>
+        <div class="dlg-footer">
+            <button id="dlgSkip" value="skip" class="alt" type="button">Skip (keep placeholders)</button>
+            <button id="dlgApply" value="apply" type="button">Apply & Convert</button>
+        </div>
+    </form>
+</dialog>
+
+<script>
+    const LEGACY_URL = 'https://massimilianopili.com/mongo/legacy/v0';
+    const THEME_KEY = 'aggfmt.theme';
+
+    // Theme management
+    function getSystemTheme() {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    function getSavedTheme() {
+        return localStorage.getItem(THEME_KEY);
+    }
+    function setTheme(theme) {
+        if (theme === 'system') {
+            document.documentElement.removeAttribute('data-theme');
+            localStorage.removeItem(THEME_KEY);
+        } else {
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem(THEME_KEY, theme);
+        }
+        updateThemeButton();
+    }
+    function updateThemeButton() {
+        const btn = document.getElementById('themeToggle');
+        const saved = getSavedTheme();
+        const current = saved || getSystemTheme();
+        btn.innerHTML = current === 'dark' ? '&#9728;&#65039;' : '&#127769;';
+        btn.title = current === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+    }
+    function toggleTheme() {
+        const saved = getSavedTheme();
+        const current = saved || getSystemTheme();
+        setTheme(current === 'dark' ? 'light' : 'dark');
+    }
+    (function initTheme() {
+        const saved = getSavedTheme();
+        if (saved) document.documentElement.setAttribute('data-theme', saved);
+    })();
+
+    // Toast notifications
+    const $toast = document.getElementById('toast');
+    let toastTimeout;
+    function showToast(msg, type = '') {
+        clearTimeout(toastTimeout);
+        $toast.textContent = msg;
+        $toast.className = 'toast' + (type ? ' ' + type : '');
+        requestAnimationFrame(() => $toast.classList.add('show'));
+        toastTimeout = setTimeout(() => $toast.classList.remove('show'), 2500);
+    }
+
+    // Error display
+    function showError(el, message, context = null, position = null) {
+        let html = message;
+        if (context && position !== null) {
+            const start = Math.max(0, position - 40);
+            const end = Math.min(context.length, position + 40);
+            const before = escapeHtml(context.slice(start, position));
+            const after = escapeHtml(context.slice(position, end));
+            const prefix = start > 0 ? '…' : '';
+            const suffix = end < context.length ? '…' : '';
+            html += `<div class="error-context">${prefix}${before}<span class="error-caret">▼</span>${after}${suffix}</div>`;
+        }
+        el.innerHTML = html;
+        el.classList.add('show');
+    }
+    function hideError(el) {
+        el.classList.remove('show');
+    }
+    function escapeHtml(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // Syntax highlighting
+    function escapeForHtml(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function highlightJSON(text) {
+        let html = escapeForHtml(text);
+        html = html.replace(/("(?:\\.|[^"\\])*")(\s*:)/g, '<span class="hl-key">$1</span>$2');
+        html = html.replace(/:(\s*)("(?:\\.|[^"\\])*")(?=[,\s\]\}]|$)/g, ':<span class="hl-string">$1$2</span>');
+        html = html.replace(/:(\s*)(-?\d+\.?\d*(?:[eE][+-]?\d+)?)(?=[,\s\]\}]|$)/g, ':<span class="hl-number">$1$2</span>');
+        html = html.replace(/:(\s*)(true|false)(?=[,\s\]\}]|$)/g, ':<span class="hl-bool">$1$2</span>');
+        html = html.replace(/:(\s*)(null)(?=[,\s\]\}]|$)/g, ':<span class="hl-null">$1$2</span>');
+        html = html.replace(/("\$\w+")/g, '<span class="hl-operator">$1</span>');
+        return html;
+    }
+
+    function highlightSpring(text) {
+        let html = escapeForHtml(text);
+        html = html.replace(/(@Aggregation)/g, '<span class="hl-operator">$1</span>');
+        html = html.replace(/(pipeline)(\s*=)/g, '<span class="hl-key">$1</span>$2');
+        html = html.replace(/\?(\d+)/g, '<span class="hl-param">?$1</span>');
+        html = html.replace(/([?:])#\{[^}]+\}/g, '<span class="hl-param">$&</span>');
+        html = html.replace(/(\$\$)([a-zA-Z_][a-zA-Z0-9_.]*)/g, '<span class="hl-operator">$1</span><span>$2</span>');
+        html = html.replace(/(?<!\$)(\$[a-zA-Z_][a-zA-Z0-9_.]*)/g, '<span class="hl-operator">$1</span>');
+        html = html.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g, '$1<span class="hl-key">$2</span>$3');
+        html = html.replace(/(['"&][a-zA-Z_$][a-zA-Z0-9_$]*['"&])(\s*:)/g, '<span class="hl-key">$1</span>$2');
+        html = html.replace(/:(\s*)(-?\d+\.?\d*)(?=[,\s\}\]'"]|$)/g, ':<span class="hl-number">$1$2</span>');
+        html = html.replace(/:(\s*)(true|false)(?=[,\s\}\]'"]|$)/g, ':<span class="hl-bool">$1$2</span>');
+        html = html.replace(/:(\s*)(null)(?=[,\s\}\]'"]|$)/g, ':<span class="hl-null">$1$2</span>');
+        html = html.replace(/:(\s*)(&apos;|')([^'&]*?)(&apos;|')(?=[,\s\}\]])/g, ':<span class="hl-string">$1$2$3$4</span>');
+        return html;
+    }
+
+    function syncHighlight(textarea, highlightEl, highlightFn) {
+        const text = textarea.value;
+        highlightEl.innerHTML = highlightFn(text) + '\n';
+        highlightEl.scrollTop = textarea.scrollTop;
+        highlightEl.scrollLeft = textarea.scrollLeft;
+    }
+
+    // Placeholder detection
+    function detectPlaceholdersFromSpring(raw) {
+        raw = String(raw || '');
+        const set = new Set();
+        for (const m of raw.matchAll(/\?(\d+)/g)) set.add(`?${m[1]}`);
+        const spelMatches = [];
+        let i = 0;
+        while (i < raw.length) {
+            if ((raw[i] === '?' || raw[i] === ':') && raw[i+1] === '#' && raw[i+2] === '{') {
+                let depth = 1;
+                let j = i + 3;
+                while (j < raw.length && depth > 0) {
+                    if (raw[j] === '{') depth++;
+                    else if (raw[j] === '}') depth--;
+                    j++;
+                }
+                spelMatches.push(raw.slice(i, j));
+                i = j;
+            } else {
+                i++;
+            }
+        }
+        spelMatches.forEach(t => set.add(t));
+        return Array.from(set).sort((a, b) => {
+            const na = parseInt(a.match(/\d+/)?.[0] || '999');
+            const nb = parseInt(b.match(/\d+/)?.[0] || '999');
+            return na - nb;
+        });
+    }
+
+    // Value parser with extended support
+    function parseUserValue(input, mode) {
+        if (mode === 'string') return String(input);
+        const s = String(input).trim();
+        if (s === '') return s;
+        try { return JSON.parse(s); } catch {}
+        const mOid = s.match(/^ObjectId\(\s*(['"])(.+?)\1\s*\)$/i);
+        if (mOid) return { "$oid": mOid[2] };
+        const mIso = s.match(/^ISODate\(\s*(['"])(.+?)\1\s*\)$/i);
+        if (mIso) return { "$date": mIso[2] };
+        const mLong = s.match(/^NumberLong\(\s*(['"]?)(-?\d+)\1\s*\)$/i);
+        if (mLong) return { "$numberLong": mLong[2] };
+        const mInt = s.match(/^NumberInt\(\s*(['"]?)(-?\d+)\1\s*\)$/i);
+        if (mInt) return parseInt(mInt[2], 10);
+        const mUuid = s.match(/^UUID\(\s*(['"])(.+?)\1\s*\)$/i);
+        if (mUuid) return { "$uuid": mUuid[2] };
+        return s;
+    }
+
+    // Persistence for substitutions
+    const SUBS_STORAGE_KEY = 'aggfmt.substitutions.v2';
+    function loadSavedSubs() {
+        try { return JSON.parse(localStorage.getItem(SUBS_STORAGE_KEY) || '{}'); }
+        catch { return {}; }
+    }
+    function saveSavedSubs(map) {
+        localStorage.setItem(SUBS_STORAGE_KEY, JSON.stringify(map));
+    }
+    function getSavedSub(token) {
+        return loadSavedSubs()[token];
+    }
+    function setSavedSub(token, value, mode) {
+        const all = loadSavedSubs();
+        all[token] = { value, mode: mode || 'auto' };
+        saveSavedSubs(all);
+    }
+    function displayForInput(entry) {
+        if (!entry) return '';
+        const { value, mode } = entry;
+        if (mode === 'string') return String(value);
+        try {
+            return typeof value === 'string' ? JSON.stringify(value) : JSON.stringify(value);
+        } catch {
+            return String(value);
+        }
+    }
+
+    // Auto-fix missing commas in JSON
+    function autoInsertCommasIfLikelyMissing(s) {
+        let out = '';
+        let inStr = false, esc = false;
+        const stack = [];
+        let changed = false;
+        const top = () => stack.length ? stack[stack.length - 1] : null;
+        function nextNonWS(i) {
+            let j = i + 1;
+            while (j < s.length && /\s/.test(s[j])) j++;
+            return j;
+        }
+        function prevNonWS(i) {
+            let j = i - 1;
+            while (j >= 0 && /\s/.test(s[j])) j--;
+            return j;
+        }
+        function scanJSONString(start) {
+            if (s[start] !== '"') return -1;
+            let i = start + 1, esc = false;
+            while (i < s.length) {
+                const c = s[i];
+                if (esc) { esc = false; i++; continue; }
+                if (c === '\\') { esc = true; i++; continue; }
+                if (c === '"') return i;
+                i++;
+            }
+            return -1;
+        }
+        function scanLiteral(start) {
+            const mNum = s.slice(start).match(/^[-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/);
+            if (mNum) return start + mNum[0].length - 1;
+            if (s.startsWith('true', start)) return start + 3;
+            if (s.startsWith('false', start)) return start + 4;
+            if (s.startsWith('null', start)) return start + 3;
+            return -1;
+        }
+        function maybeCommaAfterScalarValue(iEnd) {
+            if (top() !== '{') return;
+            const p = prevNonWS(iEnd);
+            if (p >= 0 && s[p] === ':') return;
+            const j = nextNonWS(iEnd);
+            if (s[j] === '"') {
+                const endKey = scanJSONString(j);
+                if (endKey >= 0) {
+                    const afterKey = nextNonWS(endKey);
+                    if (s[afterKey] === ':') {
+                        out += ',';
+                        changed = true;
+                    }
+                }
+            }
+        }
+        for (let i = 0; i < s.length; i++) {
+            const c = s[i];
+            out += c;
+            if (inStr) {
+                if (esc) { esc = false; continue; }
+                if (c === '\\') { esc = true; continue; }
+                if (c === '"') inStr = false;
+                continue;
+            }
+            if (c === '"') { inStr = true; continue; }
+            if (c === '{' || c === '[') { stack.push(c); continue; }
+            if (c === '}' || c === ']') {
+                stack.pop();
+                let j = nextNonWS(i);
+                if (top() === '[' && s[j] === '{') {
+                    out += ',';
+                    changed = true;
+                }
+                j = nextNonWS(i);
+                if (top() === '{' && s[j] === '"') {
+                    const endKey = scanJSONString(j);
+                    if (endKey >= 0 && s[nextNonWS(endKey)] === ':') {
+                        out += ',';
+                        changed = true;
+                    }
+                }
+                continue;
+            }
+            if (/[0-9\-tfn]/.test(c)) {
+                const start = i;
+                const end = scanLiteral(start);
+                if (end >= start) {
+                    out += s.slice(i + 1, end + 1);
+                    maybeCommaAfterScalarValue(end);
+                    i = end;
+                }
+            }
+        }
+        out = out.replace(/,\s*([}\]])/g, '$1');
+        return { text: out, changed };
+    }
+
+    // Deep replace sentinels
+    function deepReplace(node, resolver) {
+        if (Array.isArray(node)) return node.map(n => deepReplace(n, resolver));
+        if (node && typeof node === 'object') {
+            const out = {};
+            for (const [k, v] of Object.entries(node)) out[k] = deepReplace(v, resolver);
+            return out;
+        }
+        if (typeof node === 'string') {
+            const repl = resolver(node);
+            return repl !== undefined ? repl : node;
+        }
+        return node;
+    }
+
+    // Convert $regularExpression to $regex format
+    function convertRegularExpression(node) {
+        if (Array.isArray(node)) return node.map(n => convertRegularExpression(n));
+        if (node && typeof node === 'object') {
+            // Check if this is a $regularExpression object
+            if (node.$regularExpression && typeof node.$regularExpression === 'object') {
+                const regexObj = node.$regularExpression;
+                const result = { $regex: regexObj.pattern };
+                if (regexObj.options) {
+                    result.$options = regexObj.options;
+                }
+                return result;
+            }
+            // Recursively process all properties
+            const out = {};
+            for (const [k, v] of Object.entries(node)) {
+                out[k] = convertRegularExpression(v);
+            }
+            return out;
+        }
+        return node;
+    }
+
+    // FORWARD: Spring → Mongo JSON
+    function springToMongo(raw, subsMap) {
+        raw = String(raw || '');
+        function stripCommentsOutsideStrings(input) {
+            let out = '', inQ = false, esc = false;
+            for (let i = 0; i < input.length; i++) {
+                const c = input[i], n = input[i + 1];
+                if (inQ) {
+                    out += c;
+                    if (esc) { esc = false; continue; }
+                    if (c === '\\') { esc = true; continue; }
+                    if (c === '"') inQ = false;
+                    continue;
+                }
+                if (c === '"') { inQ = true; out += c; continue; }
+                if (c === '/' && n === '/') {
+                    while (i < input.length && input[i] !== '\n') i++;
+                    out += '\n';
+                    continue;
+                }
+                if (c === '/' && n === '*') {
+                    i += 2;
+                    while (i < input.length && !(input[i] === '*' && input[i + 1] === '/')) i++;
+                    i++;
+                    continue;
+                }
+                out += c;
+            }
+            return out;
+        }
+        raw = stripCommentsOutsideStrings(raw);
+        const concatRe = /"((?:[^"\\]|\\.)*)"\s*\+\s*"((?:[^"\\]|\\.)*)"/g;
+        while (concatRe.test(raw)) raw = raw.replace(concatRe, '"$1$2"');
+        let stageStrings;
+        {
+            const m = raw.match(/pipeline\s*=\s*\{([\s\S]*?)(?:\}\s*\)|$)/);
+            const chunk = m ? m[1] : raw;
+            const items = Array.from(chunk.matchAll(/"((?:[^"\\]|\\.)*)"/g)).map(x => x[0]);
+            if (items.length === 0) {
+                throw new Error('No stage strings found. Paste the @Aggregation annotation or the list of stage strings.');
+            }
+            stageStrings = items.map(s => {
+                try {
+                    return JSON.parse('[' + s + ']')[0];
+                } catch (e) {
+                    throw new Error(`Failed to parse stage string: ${s.slice(0, 50)}...`);
+                }
+            });
+        }
+        const spelBag = [];
+        const stages = stageStrings.map((str, stageIndex) => {
+            let s = String(str);
+            s = s.replace(/'/g, '"');
+            s = s.replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":');
+            s = s.replace(/([{,]\s*)(\$[A-Za-z_$][\w$]*)\s*:/g, '$1"$2":');
+            s = s.replace(/([:\[,]\s*)\?(\d+)/g, (_, pre, n) => `${pre}"__P_${n}__"`);
+            s = s.replace(/\?(\d+)/g, '"__P_$1__"');
+            let spelProcessed = '';
+            let i = 0;
+            while (i < s.length) {
+                if ((s[i] === '?' || s[i] === ':') && s[i+1] === '#' && s[i+2] === '{') {
+                    let depth = 1;
+                    let j = i + 3;
+                    while (j < s.length && depth > 0) {
+                        if (s[j] === '{') depth++;
+                        else if (s[j] === '}') depth--;
+                        j++;
+                    }
+                    const token = s.slice(i, j);
+                    const idx = spelBag.push(token) - 1;
+                    spelProcessed += `"__S_${idx}__"`;
+                    i = j;
+                } else {
+                    spelProcessed += s[i];
+                    i++;
+                }
+            }
+            s = spelProcessed;
+            s = s.trim();
+            s = s.replace(/,\s*$/, '');
+            s = s.replace(/,\s*([}\]])/g, '$1');
+            try {
+                return JSON.parse(s);
+            } catch (e1) {
+                let text = s;
+                let lastErr = e1;
+                for (let pass = 0; pass < 5; pass++) {
+                    const proposal = autoInsertCommasIfLikelyMissing(text);
+                    if (!proposal.changed) break;
+                    text = proposal.text;
+                    text = text.replace(/,\s*([}\]])/g, '$1');
+                    try {
+                        return JSON.parse(text);
+                    } catch (e2) {
+                        lastErr = e2;
+                    }
+                }
+                const posMatch = (lastErr.message || '').match(/position\s+(\d+)/i) ||
+                                 (lastErr.message || '').match(/at\s+(\d+)/i);
+                const pos = posMatch ? parseInt(posMatch[1], 10) : null;
+                const err = new Error(`Stage ${stageIndex + 1}: ${lastErr.message}`);
+                err.context = text;
+                err.position = pos;
+                throw err;
+            }
+        });
+        const resolver = (leaf) => {
+            const p = leaf.match(/^__P_(\d+)__$/);
+            if (p) {
+                const key = `?${p[1]}`;
+                if (subsMap && key in subsMap) return subsMap[key];
+                return leaf;
+            }
+            const sp = leaf.match(/^__S_(\d+)__$/);
+            if (sp) {
+                const tok = spelBag[Number(sp[1])];
+                if (subsMap && tok in subsMap) return subsMap[tok];
+                return leaf;
+            }
+            return undefined;
+        };
+        const replaced = stages.map(st => deepReplace(st, resolver));
+        return JSON.stringify(replaced, null, 2);
+    }
+
+    // REVERSE: Mongo JSON → Spring
+    function mongoToSpring(raw) {
+        raw = String(raw || '').trim();
+        let stages;
+        try {
+            stages = JSON.parse(raw);
+        } catch (e) {
+            const posMatch = (e.message || '').match(/position\s+(\d+)/i) ||
+                             (e.message || '').match(/at\s+(\d+)/i);
+            const err = new Error('Invalid JSON: ' + e.message);
+            err.context = raw;
+            err.position = posMatch ? parseInt(posMatch[1], 10) : null;
+            throw err;
+        }
+        if (!Array.isArray(stages)) {
+            throw new Error('JSON must be an array of aggregation stages');
+        }
+        // Convert $regularExpression to $regex format
+        stages = convertRegularExpression(stages);
+        if (stages.length === 0) {
+            return '@Aggregation(pipeline = {})';
+        }
+        const strings = stages.map(obj => {
+            let s = JSON.stringify(obj);
+            s = s.replace(/"/g, "'");
+            s = s.replace(/:'__P_(\d+)__'/g, ": ?$1");
+            s = s.replace(/'__P_(\d+)__'/g, "?$1");
+            s = s.replace(/"/g, '\\"');
+            return `"${s}"`;
+        });
+        return `@Aggregation(pipeline = {\n    ${strings.join(',\n    ')}\n})`;
+    }
+
+    // UI Wiring
+    const $spring = document.getElementById('springInput');
+    const $mongo = document.getElementById('mongoInput');
+    const $springHL = document.getElementById('springHighlight');
+    const $mongoHL = document.getElementById('mongoHighlight');
+    const $springError = document.getElementById('springError');
+    const $mongoError = document.getElementById('mongoError');
+    const $dlg = document.getElementById('dlg');
+    const $wrap = document.getElementById('tokensWrap');
+    const $apply = document.getElementById('dlgApply');
+    const $skip = document.getElementById('dlgSkip');
+
+    function updateSpringHL() { syncHighlight($spring, $springHL, highlightSpring); }
+    function updateMongoHL() { syncHighlight($mongo, $mongoHL, highlightJSON); }
+
+    $spring.addEventListener('input', updateSpringHL);
+    $spring.addEventListener('scroll', () => { $springHL.scrollTop = $spring.scrollTop; $springHL.scrollLeft = $spring.scrollLeft; });
+    $mongo.addEventListener('input', updateMongoHL);
+    $mongo.addEventListener('scroll', () => { $mongoHL.scrollTop = $mongo.scrollTop; $mongoHL.scrollLeft = $mongo.scrollLeft; });
+
+    document.getElementById('themeToggle').onclick = toggleTheme;
+    updateThemeButton();
+
+    document.getElementById('copySpring').onclick = () => {
+        navigator.clipboard.writeText($spring.value).then(() => showToast('Copied!', 'success'));
+    };
+    document.getElementById('copyMongo').onclick = () => {
+        navigator.clipboard.writeText($mongo.value).then(() => showToast('Copied!', 'success'));
+    };
+
+    document.getElementById('clearSpring').onclick = () => {
+        $spring.value = '';
+        updateSpringHL();
+        hideError($springError);
+        $spring.focus();
+    };
+    document.getElementById('clearMongo').onclick = () => {
+        $mongo.value = '';
+        updateMongoHL();
+        hideError($mongoError);
+        $mongo.focus();
+    };
+
+    document.getElementById('formatSpring').onclick = () => {
+        try {
+            const raw = $spring.value;
+            const m = raw.match(/pipeline\s*=\s*\{([\s\S]*?)(?:\}\s*\)|$)/);
+            const chunk = m ? m[1] : raw;
+            const items = Array.from(chunk.matchAll(/"((?:[^"\\]|\\.)*)"/g)).map(x => {
+                try { return JSON.parse('[' + x[0] + ']')[0]; } catch { return x[1]; }
+            });
+            if (items.length === 0) {
+                showError($springError, 'No stage strings found to format');
+                return;
+            }
+            const joined = items.join(' ').replace(/\s+/g, ' ').trim();
+            const stages = [];
+            let depth = 0, start = -1;
+            for (let i = 0; i < joined.length; i++) {
+                const c = joined[i];
+                if (c === '{') {
+                    if (depth === 0) start = i;
+                    depth++;
+                } else if (c === '}') {
+                    depth--;
+                    if (depth === 0 && start >= 0) {
+                        stages.push(joined.slice(start, i + 1));
+                        start = -1;
+                    }
+                }
+            }
+            if (stages.length === 0) {
+                showError($springError, 'No complete stages found');
+                return;
+            }
+            const formatted = stages.map(stage => {
+                let clean = stage.replace(/\s+/g, ' ').trim();
+                return '"' + clean.replace(/"/g, '\\"') + '"';
+            });
+            $spring.value = `@Aggregation(pipeline = {\n    ${formatted.join(',\n    ')}\n})`;
+            updateSpringHL();
+            hideError($springError);
+            showToast('Formatted!', 'success');
+        } catch (e) {
+            showError($springError, 'Cannot format: ' + e.message);
+        }
+    };
+
+    document.getElementById('formatMongo').onclick = () => {
+        try {
+            let parsed = JSON.parse($mongo.value);
+            // Convert $regularExpression to $regex format
+            parsed = convertRegularExpression(parsed);
+            $mongo.value = JSON.stringify(parsed, null, 2);
+            updateMongoHL();
+            hideError($mongoError);
+            showToast('Formatted!', 'success');
+        } catch (e) {
+            showError($mongoError, 'Cannot format: ' + e.message);
+        }
+    };
+
+    document.getElementById('swapBtn').onclick = () => {
+        const temp = $spring.value;
+        $spring.value = $mongo.value;
+        $mongo.value = temp;
+        updateSpringHL();
+        updateMongoHL();
+        hideError($springError);
+        hideError($mongoError);
+    };
+
+    function openSubstitutionDialog(tokens) {
+        $wrap.innerHTML = '';
+        const hdr = ['Token', 'Value', 'Mode'];
+        for (const h of hdr) {
+            const b = document.createElement('b');
+            b.textContent = h;
+            $wrap.appendChild(b);
+        }
+        tokens.forEach((tok, i) => {
+            const code = document.createElement('code');
+            code.textContent = tok;
+            code.title = 'placeholder';
+            const input = document.createElement('input');
+            input.placeholder = 'e.g. 42, "text", true, ObjectId("...")';
+            input.id = `tok_${i}`;
+            input.dataset.token = tok;
+            const select = document.createElement('select');
+            select.id = `mode_${i}`;
+            select.innerHTML = '<option value="auto">auto</option><option value="string">string</option>';
+            const saved = getSavedSub(tok);
+            if (saved) {
+                input.value = displayForInput(saved);
+                select.value = saved.mode || 'auto';
+            }
+            $wrap.append(code, input, select);
+        });
+        $dlg.showModal();
+        const firstInput = $wrap.querySelector('input');
+        if (firstInput) firstInput.focus();
+    }
+
+    function collectSubstitutions() {
+        const inputs = Array.from($wrap.querySelectorAll('input[id^="tok_"]'));
+        const subs = {};
+        inputs.forEach(inp => {
+            const idx = inp.id.split('_')[1];
+            const tok = inp.dataset.token;
+            const mode = document.getElementById('mode_' + idx).value;
+            const raw = inp.value.trim();
+            if (raw === '') return;
+            const parsed = parseUserValue(raw, mode);
+            subs[tok] = parsed;
+            setSavedSub(tok, parsed, mode);
+        });
+        return subs;
+    }
+
+    function doSpringToMongo(subs) {
+        try {
+            hideError($springError);
+            $mongo.value = springToMongo($spring.value, subs);
+            updateMongoHL();
+            showToast('Converted!', 'success');
+        } catch (e) {
+            showError($springError, e.message, e.context, e.position);
+        }
+    }
+
+    document.getElementById('toMongo').onclick = () => {
+        const tokens = detectPlaceholdersFromSpring($spring.value);
+        if (tokens.length > 0) {
+            openSubstitutionDialog(tokens);
+        } else {
+            doSpringToMongo(null);
+        }
+    };
+
+    document.getElementById('toSpring').onclick = () => {
+        try {
+            hideError($mongoError);
+            $spring.value = mongoToSpring($mongo.value);
+            updateSpringHL();
+            showToast('Converted!', 'success');
+        } catch (e) {
+            showError($mongoError, e.message, e.context, e.position);
+        }
+    };
+
+    $apply.addEventListener('click', () => {
+        const subs = collectSubstitutions();
+        doSpringToMongo(subs);
+        $dlg.close('apply');
+    });
+
+    $skip.addEventListener('click', () => {
+        doSpringToMongo(null);
+        $dlg.close('skip');
+    });
+
+    $wrap.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            $apply.click();
+        }
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'ArrowRight') {
+            e.preventDefault();
+            document.getElementById('toMongo').click();
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'ArrowLeft') {
+            e.preventDefault();
+            document.getElementById('toSpring').click();
+        }
+        if (e.key === 'Escape' && $dlg.open) {
+            $dlg.close('cancel');
+        }
+    });
+
+    document.getElementById('goLegacy').addEventListener('click', () => {
+        const btn = document.getElementById('goLegacy');
+        const qs = new URLSearchParams(location.search);
+        const url = btn.dataset.url || LEGACY_URL || qs.get('legacy') || qs.get('legacyUrl');
+        if (!url) {
+            const entered = prompt('Legacy URL not configured. Paste the URL:');
+            if (entered && entered.trim()) {
+                location.href = entered.trim();
+            }
+            return;
+        }
+        location.href = url;
+    });
+
+    [$spring, $mongo].forEach(ta => {
+        ta.addEventListener('keydown', (e) => {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = ta.selectionStart;
+                const end = ta.selectionEnd;
+                ta.value = ta.value.substring(0, start) + '  ' + ta.value.substring(end);
+                ta.selectionStart = ta.selectionEnd = start + 2;
+            }
+        });
+    });
+</script>
+</body>
+</html>

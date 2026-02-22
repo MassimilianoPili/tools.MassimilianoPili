@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Base64 Encoder/Decoder</title>
+    <link rel="stylesheet" href="/css/common.css">
+    <style>
+        /* Page-specific layout */
+        body {
+            display: grid;
+            place-items: center;
+            padding: 2rem 1rem;
+            min-height: 100vh;
+        }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .cards {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1rem;
+            align-items: start;
+        }
+        @media (min-width: 800px) {
+            .cards {
+                grid-template-columns: 1fr 1fr;
+                align-items: stretch;
+            }
+        }
+        .card {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        /* Output area with copy button */
+        .output-area {
+            position: relative;
+        }
+        .output-area textarea {
+            padding-right: 2.5rem;
+        }
+        .output-area.grow {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .output-area.grow textarea {
+            flex: 1;
+            min-height: 100px;
+        }
+        .copy-btn {
+            position: absolute;
+            bottom: 0.4rem;
+            right: 0.4rem;
+            padding: 0.25rem 0.4rem;
+            font-size: 0.7rem;
+        }
+        #detectedBadge {
+            font-size: 0.7rem;
+            padding: 0.1rem 0.35rem;
+            border-radius: 4px;
+            background: var(--success);
+            color: #fff;
+            margin-left: 0.25rem;
+        }
+        #detectedBadge:empty {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <main class="wrap">
+        <header>
+            <div>
+                <h1>Base64 Tool</h1>
+                <p class="subtitle">Codifica e decodifica Base64</p>
+            </div>
+            <button id="themeToggle" class="icon-btn" title="Toggle dark/light mode">&#127763;</button>
+        </header>
+
+        <div class="cards">
+            <!-- DECODE CARD -->
+            <div class="card">
+                <h2 class="card-title"><span class="icon">&#128196;</span> Decode</h2>
+
+                <div class="card-body">
+                    <div class="form-group">
+                        <label>Carica file .txt con Base64</label>
+                        <div class="drop-zone" id="decodeDropZone">
+                            <div class="drop-zone-icon">&#128462;</div>
+                            <div class="drop-zone-text">Trascina o clicca per selezionare</div>
+                            <div class="file-name" id="decodeFileName"></div>
+                        </div>
+                        <input type="file" id="decodeFileInput" accept=".txt" style="display: none;">
+                    </div>
+
+                    <div class="or-divider">oppure</div>
+
+                    <div class="form-group">
+                        <label for="decodeInput">Incolla contenuto Base64</label>
+                        <textarea id="decodeInput" placeholder="Incolla qui il testo base64..."></textarea>
+                    </div>
+
+                    <div class="inline-group">
+                        <div class="form-group" style="flex: 2">
+                            <label for="outputName">Nome file</label>
+                            <input type="text" id="outputName" placeholder="es. documento">
+                        </div>
+                        <div class="form-group" style="flex: 1">
+                            <label for="extension">Estensione <span id="detectedBadge"></span></label>
+                            <select id="extension">
+                                <option value="docx">docx</option>
+                                <option value="xlsx">xlsx</option>
+                                <option value="pptx">pptx</option>
+                                <option value="doc">doc</option>
+                                <option value="mp3">mp3</option>
+                                <option value="mp4">mp4</option>
+                                <option value="wav">wav</option>
+                                <option value="avi">avi</option>
+                                <option value="json">json</option>
+                                <option value="xml">xml</option>
+                                <option value="html">html</option>
+                                <option value="txt">txt</option>
+                                <option value="bin">bin</option>
+                                <option value="pdf">pdf</option>
+                                <option value="png">png</option>
+                                <option value="jpg">jpg</option>
+                                <option value="gif">gif</option>
+                                <option value="webp">webp</option>
+                                <option value="svg">svg</option>
+                                <option value="zip">zip</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card-footer">
+                    <button class="btn-primary" id="decodeBtn" disabled>Decodifica e Scarica</button>
+                    <div class="message" id="decodeMessage"></div>
+                </div>
+            </div>
+
+            <!-- ENCODE CARD -->
+            <div class="card">
+                <h2 class="card-title"><span class="icon">&#128206;</span> Encode</h2>
+
+                <div class="card-body">
+                    <div class="form-group">
+                        <label>Carica file da codificare</label>
+                        <div class="drop-zone" id="encodeDropZone">
+                            <div class="drop-zone-icon">&#128206;</div>
+                            <div class="drop-zone-text">Trascina o clicca per selezionare</div>
+                            <div class="file-name" id="encodeFileName"></div>
+                        </div>
+                        <input type="file" id="encodeFileInput" style="display: none;">
+                    </div>
+
+                    <div class="form-group output-area grow">
+                        <label for="encodeOutput">Output Base64</label>
+                        <textarea id="encodeOutput" readonly placeholder="Il risultato apparira qui..."></textarea>
+                        <button class="icon-btn copy-btn" id="copyEncodeBtn" title="Copia">&#128203;</button>
+                    </div>
+                </div>
+
+                <div class="card-footer">
+                    <div class="btn-row">
+                        <button class="btn-primary" id="encodeBtn" disabled>Codifica</button>
+                        <button class="btn-secondary" id="downloadTxtBtn" disabled>Scarica .txt</button>
+                    </div>
+                    <div class="message" id="encodeMessage"></div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <a href="https://massimilianopili.com/home">&larr; Home</a>
+        </footer>
+    </main>
+
+    <script>
+        const THEME_KEY = 'base64.theme';
+
+        // Theme management
+        function getSystemTheme() {
+            return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        function getSavedTheme() {
+            return localStorage.getItem(THEME_KEY);
+        }
+        function setTheme(theme) {
+            if (theme === 'system') {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.removeItem(THEME_KEY);
+            } else {
+                document.documentElement.setAttribute('data-theme', theme);
+                localStorage.setItem(THEME_KEY, theme);
+            }
+            updateThemeButton();
+        }
+        function updateThemeButton() {
+            const btn = document.getElementById('themeToggle');
+            const saved = getSavedTheme();
+            const current = saved || getSystemTheme();
+            btn.innerHTML = current === 'dark' ? '&#9728;&#65039;' : '&#127769;';
+            btn.title = current === 'dark' ? 'Passa a tema chiaro' : 'Passa a tema scuro';
+        }
+        function toggleTheme() {
+            const saved = getSavedTheme();
+            const current = saved || getSystemTheme();
+            setTheme(current === 'dark' ? 'light' : 'dark');
+        }
+        (function initTheme() {
+            const saved = getSavedTheme();
+            if (saved) document.documentElement.setAttribute('data-theme', saved);
+        })();
+
+        document.getElementById('themeToggle').onclick = toggleTheme;
+        updateThemeButton();
+
+        // Utility
+        function formatBytes(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        function showMessage(el, text, type) {
+            el.textContent = text;
+            el.className = `message ${type} show`;
+            if (type === 'success') {
+                setTimeout(() => el.classList.remove('show'), 5000);
+            }
+        }
+
+        // Detect file type from magic bytes
+        function detectFileType(bytes) {
+            const hex = (offset, length) =>
+                Array.from(bytes.slice(offset, offset + length))
+                    .map(b => b.toString(16).padStart(2, '0')).join('');
+            const ascii = (offset, length) =>
+                String.fromCharCode(...bytes.slice(offset, offset + length));
+
+            const h = hex(0, 12);
+            const a = ascii(0, 12);
+
+            // PDF
+            if (a.startsWith('%PDF')) return { ext: 'pdf', mime: 'application/pdf', name: 'PDF' };
+
+            // Images
+            if (h.startsWith('89504e47')) return { ext: 'png', mime: 'image/png', name: 'PNG' };
+            if (h.startsWith('ffd8ff')) return { ext: 'jpg', mime: 'image/jpeg', name: 'JPEG' };
+            if (a.startsWith('GIF87a') || a.startsWith('GIF89a')) return { ext: 'gif', mime: 'image/gif', name: 'GIF' };
+            if (h.startsWith('424d')) return { ext: 'bmp', mime: 'image/bmp', name: 'BMP' };
+            if (h.startsWith('49492a00') || h.startsWith('4d4d002a')) return { ext: 'tiff', mime: 'image/tiff', name: 'TIFF' };
+            if (h.startsWith('00000100')) return { ext: 'ico', mime: 'image/x-icon', name: 'ICO' };
+            if (a.startsWith('RIFF') && ascii(8, 4) === 'WEBP') return { ext: 'webp', mime: 'image/webp', name: 'WebP' };
+
+            // Archives & Office (ZIP-based)
+            if (h.startsWith('504b0304') || h.startsWith('504b0506') || h.startsWith('504b0708')) {
+                // Check if it's an Office document by looking for specific paths in ZIP
+                const content = ascii(0, Math.min(bytes.length, 500));
+                if (content.includes('word/')) return { ext: 'docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', name: 'Word (docx)' };
+                if (content.includes('xl/')) return { ext: 'xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', name: 'Excel (xlsx)' };
+                if (content.includes('ppt/')) return { ext: 'pptx', mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', name: 'PowerPoint (pptx)' };
+                return { ext: 'zip', mime: 'application/zip', name: 'ZIP' };
+            }
+            if (h.startsWith('526172211a07')) return { ext: 'rar', mime: 'application/x-rar-compressed', name: 'RAR' };
+            if (h.startsWith('1f8b')) return { ext: 'gz', mime: 'application/gzip', name: 'GZIP' };
+            if (h.startsWith('377abcaf271c')) return { ext: '7z', mime: 'application/x-7z-compressed', name: '7-Zip' };
+
+            // Audio/Video
+            if (h.startsWith('fffb') || h.startsWith('fff3') || h.startsWith('fff2') || a.startsWith('ID3'))
+                return { ext: 'mp3', mime: 'audio/mpeg', name: 'MP3' };
+            if (h.startsWith('4f676753')) return { ext: 'ogg', mime: 'audio/ogg', name: 'OGG' };
+            if (a.startsWith('RIFF') && ascii(8, 4) === 'WAVE') return { ext: 'wav', mime: 'audio/wav', name: 'WAV' };
+            if (a.startsWith('fLaC')) return { ext: 'flac', mime: 'audio/flac', name: 'FLAC' };
+            if (hex(4, 4) === '66747970') return { ext: 'mp4', mime: 'video/mp4', name: 'MP4' }; // ftyp at offset 4
+            if (h.startsWith('1a45dfa3')) return { ext: 'webm', mime: 'video/webm', name: 'WebM' };
+            if (a.startsWith('RIFF') && ascii(8, 4) === 'AVI ') return { ext: 'avi', mime: 'video/x-msvideo', name: 'AVI' };
+
+            // Documents
+            if (h.startsWith('d0cf11e0a1b11ae1')) return { ext: 'doc', mime: 'application/msword', name: 'MS Office (legacy)' };
+            if (a.startsWith('{\\rtf')) return { ext: 'rtf', mime: 'application/rtf', name: 'RTF' };
+
+            // Executables
+            if (h.startsWith('4d5a')) return { ext: 'exe', mime: 'application/x-msdownload', name: 'Windows Executable' };
+            if (h.startsWith('7f454c46')) return { ext: 'elf', mime: 'application/x-executable', name: 'Linux Executable' };
+
+            // Web
+            if (h.startsWith('3c3f786d6c') || h.startsWith('3c21444f43')) return { ext: 'xml', mime: 'application/xml', name: 'XML' };
+            if (a.startsWith('<svg')) return { ext: 'svg', mime: 'image/svg+xml', name: 'SVG' };
+            if (a.startsWith('<!DOCTYPE html') || a.startsWith('<html')) return { ext: 'html', mime: 'text/html', name: 'HTML' };
+
+            // Fonts
+            if (h.startsWith('00010000') || a.startsWith('OTTO')) return { ext: 'otf', mime: 'font/otf', name: 'OpenType Font' };
+            if (a.startsWith('wOFF')) return { ext: 'woff', mime: 'font/woff', name: 'WOFF' };
+            if (a.startsWith('wOF2')) return { ext: 'woff2', mime: 'font/woff2', name: 'WOFF2' };
+
+            // SQLite
+            if (a.startsWith('SQLite format 3')) return { ext: 'sqlite', mime: 'application/x-sqlite3', name: 'SQLite' };
+
+            // JSON (heuristic - starts with { or [)
+            const trimmed = String.fromCharCode(...bytes.slice(0, 1)).trim();
+            if (trimmed === '{' || trimmed === '[') return { ext: 'json', mime: 'application/json', name: 'JSON (maybe)' };
+
+            return null; // Unknown
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // DECODE
+        // ═══════════════════════════════════════════════════════════════
+        const decodeDropZone = document.getElementById('decodeDropZone');
+        const decodeFileInput = document.getElementById('decodeFileInput');
+        const decodeFileName = document.getElementById('decodeFileName');
+        const decodeInput = document.getElementById('decodeInput');
+        const outputName = document.getElementById('outputName');
+        const extension = document.getElementById('extension');
+        const detectedBadge = document.getElementById('detectedBadge');
+        const decodeBtn = document.getElementById('decodeBtn');
+        const decodeMessage = document.getElementById('decodeMessage');
+
+        let decodeFileContent = null;
+
+        // Try to detect file type from base64 content and update selector
+        function tryDetectAndUpdateExtension(base64Content) {
+            detectedBadge.textContent = '';
+            if (!base64Content) return;
+            try {
+                const binaryString = atob(base64Content.trim());
+                // First check with initial bytes
+                const initialBytes = new Uint8Array(Math.min(binaryString.length, 500));
+                for (let i = 0; i < initialBytes.length; i++) {
+                    initialBytes[i] = binaryString.charCodeAt(i);
+                }
+                let detected = detectFileType(initialBytes);
+
+                // If it's a ZIP, check the entire content for Office formats
+                if (detected && detected.ext === 'zip' && binaryString.length > 0) {
+                    if (binaryString.includes('word/')) {
+                        detected = { ext: 'docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', name: 'Word (docx)' };
+                    } else if (binaryString.includes('xl/')) {
+                        detected = { ext: 'xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', name: 'Excel (xlsx)' };
+                    } else if (binaryString.includes('ppt/')) {
+                        detected = { ext: 'pptx', mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', name: 'PowerPoint (pptx)' };
+                    }
+                }
+
+                if (detected) {
+                    // Try to select the detected extension
+                    const option = extension.querySelector(`option[value="${detected.ext}"]`);
+                    if (option) {
+                        extension.value = detected.ext;
+                    } else {
+                        // Add option if not in list
+                        const newOpt = document.createElement('option');
+                        newOpt.value = detected.ext;
+                        newOpt.textContent = detected.ext;
+                        extension.insertBefore(newOpt, extension.firstChild);
+                        extension.value = detected.ext;
+                    }
+                    detectedBadge.textContent = detected.name;
+                }
+            } catch (e) {
+                // Invalid base64, ignore
+            }
+        }
+
+        decodeDropZone.addEventListener('click', () => decodeFileInput.click());
+        decodeDropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            decodeDropZone.classList.add('dragover');
+        });
+        decodeDropZone.addEventListener('dragleave', () => decodeDropZone.classList.remove('dragover'));
+        decodeDropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            decodeDropZone.classList.remove('dragover');
+            if (e.dataTransfer.files[0]) handleDecodeFile(e.dataTransfer.files[0]);
+        });
+        decodeFileInput.addEventListener('change', (e) => {
+            if (e.target.files[0]) handleDecodeFile(e.target.files[0]);
+        });
+
+        function handleDecodeFile(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                decodeFileContent = e.target.result;
+                decodeInput.value = '';
+                decodeDropZone.classList.add('has-file');
+                decodeFileName.textContent = file.name;
+                const baseName = file.name.replace(/\.[^.]+$/, '');
+                if (!outputName.value) outputName.value = baseName;
+                tryDetectAndUpdateExtension(decodeFileContent);
+                updateDecodeButton();
+            };
+            reader.readAsText(file);
+        }
+
+        decodeInput.addEventListener('input', () => {
+            if (decodeInput.value.trim()) {
+                decodeFileContent = null;
+                decodeDropZone.classList.remove('has-file');
+                decodeFileName.textContent = '';
+                tryDetectAndUpdateExtension(decodeInput.value);
+            } else {
+                detectedBadge.textContent = '';
+            }
+            updateDecodeButton();
+        });
+
+        function updateDecodeButton() {
+            decodeBtn.disabled = !(decodeFileContent || decodeInput.value.trim());
+        }
+
+        decodeBtn.addEventListener('click', () => {
+            const base64Content = (decodeFileContent || decodeInput.value).trim();
+            if (!base64Content) {
+                showMessage(decodeMessage, 'Nessun contenuto da decodificare', 'error');
+                return;
+            }
+            try {
+                const binaryString = atob(base64Content);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+
+                // Use selected extension
+                const ext = extension.value;
+                const baseName = outputName.value.trim() || 'decoded';
+                const filename = `${baseName}.${ext}`;
+
+                const blob = new Blob([bytes]);
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                showMessage(decodeMessage, `Scaricato: ${filename} (${formatBytes(bytes.length)})`, 'success');
+            } catch (err) {
+                showMessage(decodeMessage, `Errore: ${err.message}`, 'error');
+            }
+        });
+
+        // ═══════════════════════════════════════════════════════════════
+        // ENCODE
+        // ═══════════════════════════════════════════════════════════════
+        const encodeDropZone = document.getElementById('encodeDropZone');
+        const encodeFileInput = document.getElementById('encodeFileInput');
+        const encodeFileName = document.getElementById('encodeFileName');
+        const encodeOutput = document.getElementById('encodeOutput');
+        const encodeBtn = document.getElementById('encodeBtn');
+        const downloadTxtBtn = document.getElementById('downloadTxtBtn');
+        const copyEncodeBtn = document.getElementById('copyEncodeBtn');
+        const encodeMessage = document.getElementById('encodeMessage');
+
+        let encodeFileData = null;
+        let encodeOriginalName = '';
+
+        encodeDropZone.addEventListener('click', () => encodeFileInput.click());
+        encodeDropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            encodeDropZone.classList.add('dragover');
+        });
+        encodeDropZone.addEventListener('dragleave', () => encodeDropZone.classList.remove('dragover'));
+        encodeDropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            encodeDropZone.classList.remove('dragover');
+            if (e.dataTransfer.files[0]) handleEncodeFile(e.dataTransfer.files[0]);
+        });
+        encodeFileInput.addEventListener('change', (e) => {
+            if (e.target.files[0]) handleEncodeFile(e.target.files[0]);
+        });
+
+        function handleEncodeFile(file) {
+            encodeOriginalName = file.name.replace(/\.[^.]+$/, '');
+            encodeDropZone.classList.add('has-file');
+            encodeFileName.textContent = `${file.name} (${formatBytes(file.size)})`;
+            encodeOutput.value = '';
+            downloadTxtBtn.disabled = true;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                encodeFileData = e.target.result;
+                encodeBtn.disabled = false;
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        encodeBtn.addEventListener('click', () => {
+            if (!encodeFileData) {
+                showMessage(encodeMessage, 'Nessun file selezionato', 'error');
+                return;
+            }
+            try {
+                const bytes = new Uint8Array(encodeFileData);
+                let binary = '';
+                for (let i = 0; i < bytes.length; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                const base64 = btoa(binary);
+                encodeOutput.value = base64;
+                downloadTxtBtn.disabled = false;
+                showMessage(encodeMessage, `Codificato: ${formatBytes(base64.length)} Base64`, 'success');
+            } catch (err) {
+                showMessage(encodeMessage, `Errore: ${err.message}`, 'error');
+            }
+        });
+
+        copyEncodeBtn.addEventListener('click', () => {
+            if (!encodeOutput.value) return;
+            navigator.clipboard.writeText(encodeOutput.value).then(() => {
+                copyEncodeBtn.innerHTML = '&#10003;';
+                setTimeout(() => copyEncodeBtn.innerHTML = '&#128203;', 1500);
+            });
+        });
+
+        downloadTxtBtn.addEventListener('click', () => {
+            if (!encodeOutput.value) return;
+            const blob = new Blob([encodeOutput.value], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${encodeOriginalName || 'encoded'}_base64.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showMessage(encodeMessage, `Scaricato: ${a.download}`, 'success');
+        });
+    </script>
+</body>
+</html>

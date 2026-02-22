@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Mongo ↔ Spring @Aggregation Formatter</title>
+    <style>
+        *{box-sizing:border-box}
+        body{margin:0;padding:1.5rem;font-family:system-ui,sans-serif;display:grid;gap:1rem;background:#f8f9fa}
+        h1{margin:0 0 .5rem;font-size:1.4rem;text-align:center}
+        .grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+        textarea{width:100%;height:320px;padding:.6rem;font-family:monospace;border:1px solid #ccc;border-radius:6px;resize:vertical}
+        button{padding:.4rem .9rem;border:0;border-radius:4px;cursor:pointer;font-weight:600;background:#1557ff;color:#fff}
+        button:active{transform:translateY(1px)}
+        .toolbar{display:flex;gap:.5rem;justify-content:center;margin-bottom:.3rem}
+    </style>
+</head>
+<body>
+<h1>Mongo ↔ Spring @Aggregation Formatter</h1>
+
+<div class="grid">
+    <div>
+        <div class="toolbar">
+            <button id="toMongo">Spring → Mongo</button>
+        </div>
+        <textarea id="springInput" placeholder="@Aggregation(pipeline = { … })"></textarea>
+    </div>
+
+    <div>
+        <div class="toolbar">
+            <button id="toSpring">Mongo → Spring</button>
+        </div>
+        <textarea id="mongoInput" placeholder='[ { "$match": … } ]'></textarea>
+    </div>
+</div>
+
+<script>
+    //////////////////////////////////////////////////////////////////////////
+    //  FORWARD  : Spring  ->  Mongo JSON
+    //////////////////////////////////////////////////////////////////////////
+    function springToMongo(raw) {
+        raw = String(raw);
+
+        // 1. isolate the { … } block after “pipeline =”
+        const m = raw.match(/pipeline\s*=\s*\{([\s\S]*?)\}\s*\)/);
+        let inside = m ? m[1] : raw.trim();
+        if (inside.startsWith('{') && inside.endsWith('}')) inside = inside.slice(1, -1);
+
+        // 2. build a JSON array of the quoted stage strings
+        const arrText = '[' + inside + ']'
+            .replace(/,\s*\}/g, '}')   // safety: remove trailing comma
+            .replace(/\r?\n/g, '');    // JSON.parse tolerates whitespace, but keep it simple
+
+        let stageStrings;
+        try {
+            stageStrings = JSON.parse(arrText);      // ["{'$match':…}", "{'$project':…}", …]
+        } catch (e) {
+            throw new Error('Cannot parse the pipeline string list – check quotes/commas.');
+        }
+
+        // 3. normalise each stage string -> JS object
+        const stages = stageStrings.map(str => {
+            let s = str
+                .replace(/'/g, '"')              // single → double quotes
+                .replace(/:\s*\?(\d+)/g, ': "?$1"'); // wrap naked ?n
+            return JSON.parse(s);
+        });
+
+        return JSON.stringify(stages, null, 2);
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    //  REVERSE  : Mongo JSON  ->  Spring
+    //////////////////////////////////////////////////////////////////////////
+    function mongoToSpring(raw) {
+        let stages;
+        try { stages = JSON.parse(raw); }
+        catch { throw new Error('Left pane is not valid JSON'); }
+        if (!Array.isArray(stages)) throw new Error('JSON must be an array of stages');
+
+        const strings = stages.map(obj => {
+            let s = JSON.stringify(obj)
+                        .replace(/"/g, "'")            // double → single quotes inside stage
+                        .replace(/:'\?(\d+)'/g, ': ?$1'); // unwrap "?n" back to ?n
+            return `"${s}"`;
+        });
+
+        return `@Aggregation(pipeline = {\n    ${strings.join(',\n    ')}\n})`;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    //  Wiring
+    //////////////////////////////////////////////////////////////////////////
+    document.getElementById('toMongo').onclick = () => {
+        try {
+            document.getElementById('mongoInput').value =
+                springToMongo(document.getElementById('springInput').value);
+        } catch (e) { alert(e.message); }
+    };
+
+    document.getElementById('toSpring').onclick = () => {
+        try {
+            document.getElementById('springInput').value =
+                mongoToSpring(document.getElementById('mongoInput').value);
+        } catch (e) { alert(e.message); }
+    };
+</script>
+</body>
+</html>

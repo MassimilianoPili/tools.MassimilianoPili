@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JSON & cURL Prettifier</title>
+    <link rel="stylesheet" href="/css/common.css">
+    <style>
+        /* Syntax highlighting colors */
+        :root, [data-theme="light"] {
+            --hl-key: #660e7a;
+            --hl-string: #067d17;
+            --hl-number: #1750eb;
+            --hl-bool: #000080;
+            --hl-null: #000080;
+            --hl-operator: #0033b3;
+            --hl-bracket: #0f172a;
+            --hl-label: #9876aa;
+            --hl-url: #006dcc;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --hl-key: #9876aa;
+                --hl-string: #6a8759;
+                --hl-number: #6897bb;
+                --hl-bool: #cc7832;
+                --hl-null: #cc7832;
+                --hl-operator: #cc7832;
+                --hl-bracket: #e5e7eb;
+                --hl-label: #ffc66d;
+                --hl-url: #6897bb;
+            }
+        }
+        [data-theme="dark"] {
+            --hl-key: #9876aa;
+            --hl-string: #6a8759;
+            --hl-number: #6897bb;
+            --hl-bool: #cc7832;
+            --hl-null: #cc7832;
+            --hl-operator: #cc7832;
+            --hl-bracket: #e5e7eb;
+            --hl-label: #ffc66d;
+            --hl-url: #6897bb;
+        }
+
+        /* Page layout */
+        body {
+            padding: .75rem 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: .5rem;
+            min-height: 100vh;
+        }
+        h1 {
+            font-size: 1.2rem;
+            text-align: center;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: .5rem;
+            flex: 1;
+            min-height: 0;
+        }
+        .pane {
+            display: flex;
+            flex-direction: column;
+            gap: .35rem;
+            flex: 1;
+            min-height: 0;
+        }
+        .pane-header {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            flex-wrap: wrap;
+        }
+        .pane-title {
+            font-weight: 600;
+            font-size: .9rem;
+            color: var(--muted);
+        }
+        .spacer { flex: 1; }
+        .row {
+            display: flex;
+            gap: .35rem;
+            align-items: center;
+        }
+
+        /* Editor */
+        .editor-wrap {
+            position: relative;
+            flex: 1;
+            min-height: 120px;
+            display: flex;
+        }
+        .editor-wrap textarea {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            color: transparent;
+            caret-color: var(--text);
+            z-index: 2;
+            resize: none;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: .5rem;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: .8rem;
+            line-height: 1.4;
+            tab-size: 2;
+        }
+        .editor-wrap textarea:focus {
+            outline: 2px solid var(--primary);
+            outline-offset: -1px;
+        }
+        .editor-wrap .highlight-layer {
+            flex: 1;
+            padding: .5rem;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: .8rem;
+            line-height: 1.4;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--surface);
+            color: var(--text);
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow: auto;
+            tab-size: 2;
+        }
+
+        /* Output */
+        .output-area {
+            flex: 1;
+            min-height: 120px;
+            padding: .5rem;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: .8rem;
+            line-height: 1.4;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--surface);
+            color: var(--text);
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow: auto;
+        }
+
+        /* Syntax highlighting */
+        .hl-key { color: var(--hl-key); }
+        .hl-string { color: var(--hl-string); }
+        .hl-number { color: var(--hl-number); }
+        .hl-bool { color: var(--hl-bool); font-weight: 600; }
+        .hl-null { color: var(--hl-null); font-weight: 600; }
+        .hl-operator { color: var(--hl-operator); }
+        .hl-label { color: var(--hl-label); font-weight: 600; }
+        .hl-url { color: var(--hl-url); }
+
+        /* Buttons override */
+        button {
+            padding: .35rem .7rem;
+            border-radius: 5px;
+            font-size: .8rem;
+        }
+        button.icon-btn {
+            padding: .25rem .45rem;
+            font-size: .75rem;
+        }
+        .toolbar {
+            display: flex;
+            gap: .4rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 1.5rem;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--text);
+            color: var(--bg);
+            padding: .6rem 1.2rem;
+            border-radius: 8px;
+            font-size: .875rem;
+            font-weight: 500;
+            opacity: 0;
+            transition: transform .3s ease, opacity .3s ease;
+            z-index: 1000;
+            pointer-events: none;
+        }
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+        .toast.success { background: var(--success); color: #fff; }
+        .toast.error { background: var(--danger); color: #fff; }
+
+        /* Error */
+        .error-box {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 8px;
+            padding: .75rem 1rem;
+            color: #991b1b;
+            font-size: .875rem;
+            margin-top: .5rem;
+            display: none;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) .error-box {
+                background: #450a0a;
+                border-color: #7f1d1d;
+                color: #fca5a5;
+            }
+        }
+        [data-theme="dark"] .error-box {
+            background: #450a0a;
+            border-color: #7f1d1d;
+            color: #fca5a5;
+        }
+        .error-box.show { display: block; }
+    </style>
+</head>
+<body>
+<h1>JSON & cURL Prettifier</h1>
+
+<div class="row" style="justify-content: flex-end;">
+    <button id="themeToggle" class="icon-btn" title="Toggle dark/light mode">&#127763;</button>
+</div>
+
+<div class="container">
+    <div class="pane">
+        <div class="pane-header">
+            <span class="pane-title">Input</span>
+            <span class="spacer"></span>
+            <button id="clearInput" class="icon-btn" title="Clear">&#10005;</button>
+            <button id="pasteInput" class="icon-btn" title="Paste from clipboard">&#128203;</button>
+        </div>
+        <div class="toolbar">
+            <button id="prettifyBtn">Prettify &#8595;</button>
+        </div>
+        <div class="editor-wrap">
+            <textarea id="input" spellcheck="false" placeholder="Paste JSON or cURL command here..."></textarea>
+            <div id="inputHighlight" class="highlight-layer"></div>
+        </div>
+    </div>
+
+    <div class="pane">
+        <div class="pane-header">
+            <span class="pane-title">Output</span>
+            <span class="spacer"></span>
+            <button id="copyOutput" class="icon-btn" title="Copy to clipboard">&#128203;</button>
+        </div>
+        <div id="output" class="output-area"></div>
+        <div id="errorBox" class="error-box"></div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+    const THEME_KEY = 'prettifier.theme';
+
+    // Theme management
+    function getSystemTheme() {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    function getSavedTheme() {
+        return localStorage.getItem(THEME_KEY);
+    }
+    function setTheme(theme) {
+        if (theme === 'system') {
+            document.documentElement.removeAttribute('data-theme');
+            localStorage.removeItem(THEME_KEY);
+        } else {
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem(THEME_KEY, theme);
+        }
+        updateThemeButton();
+    }
+    function updateThemeButton() {
+        const btn = document.getElementById('themeToggle');
+        const saved = getSavedTheme();
+        const current = saved || getSystemTheme();
+        btn.innerHTML = current === 'dark' ? '&#9728;&#65039;' : '&#127769;';
+        btn.title = current === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+    }
+    function toggleTheme() {
+        const saved = getSavedTheme();
+        const current = saved || getSystemTheme();
+        setTheme(current === 'dark' ? 'light' : 'dark');
+    }
+    (function initTheme() {
+        const saved = getSavedTheme();
+        if (saved) document.documentElement.setAttribute('data-theme', saved);
+    })();
+
+    // Toast
+    const $toast = document.getElementById('toast');
+    let toastTimeout;
+    function showToast(msg, type = '') {
+        clearTimeout(toastTimeout);
+        $toast.textContent = msg;
+        $toast.className = 'toast' + (type ? ' ' + type : '');
+        requestAnimationFrame(() => $toast.classList.add('show'));
+        toastTimeout = setTimeout(() => $toast.classList.remove('show'), 2500);
+    }
+
+    // Syntax highlighting
+    function escapeHtml(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function highlightJSON(text) {
+        let html = escapeHtml(text);
+        html = html.replace(/("(?:\\.|[^"\\])*")(\s*:)/g, '<span class="hl-key">$1</span>$2');
+        html = html.replace(/:(\s*)("(?:\\.|[^"\\])*")(?=[,\s\]\}]|$)/g, ':<span class="hl-string">$1$2</span>');
+        html = html.replace(/:(\s*)(-?\d+\.?\d*(?:[eE][+-]?\d+)?)(?=[,\s\]\}]|$)/g, ':<span class="hl-number">$1$2</span>');
+        html = html.replace(/:(\s*)(true|false)(?=[,\s\]\}]|$)/g, ':<span class="hl-bool">$1$2</span>');
+        html = html.replace(/:(\s*)(null)(?=[,\s\]\}]|$)/g, ':<span class="hl-null">$1$2</span>');
+        return html;
+    }
+
+    function highlightInput(text) {
+        if (text.trim().startsWith('curl')) {
+            return highlightCurl(text);
+        }
+        return highlightJSON(text);
+    }
+
+    function highlightCurl(text) {
+        let html = escapeHtml(text);
+        html = html.replace(/^(curl)\b/gm, '<span class="hl-operator">$1</span>');
+        html = html.replace(/(\s)(-[A-Za-z]|--[a-z-]+)/g, '$1<span class="hl-label">$2</span>');
+        html = html.replace(/(https?:\/\/[^\s'"]+)/g, '<span class="hl-url">$1</span>');
+        html = html.replace(/'([^']*)'/g, '<span class="hl-string">\'$1\'</span>');
+        html = html.replace(/"([^"]*)"/g, '<span class="hl-string">"$1"</span>');
+        return html;
+    }
+
+    function syncHighlight() {
+        const text = $input.value;
+        $inputHL.innerHTML = highlightInput(text) + '\n';
+        $inputHL.scrollTop = $input.scrollTop;
+        $inputHL.scrollLeft = $input.scrollLeft;
+    }
+
+    // JSON Prettifier
+    function prettifyJSON(source) {
+        const obj = JSON.parse(source);
+        const pretty = JSON.stringify(obj, null, 2);
+        return highlightJSON(escapeHtml(pretty));
+    }
+
+    // cURL Parser
+    function stripQuotes(s) {
+        if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+            return s.slice(1, -1);
+        }
+        return s;
+    }
+
+    function parseCurl(cmd) {
+        cmd = cmd.replace(/\\\s*\n/g, ' ').replace(/\n/g, ' ');
+        const tokens = cmd.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g);
+        if (!tokens || tokens[0].toLowerCase() !== 'curl') {
+            throw new Error('Command must start with "curl"');
+        }
+
+        let method = 'GET';
+        let url = '';
+        const headers = {};
+        let body = '';
+
+        for (let i = 1; i < tokens.length; i++) {
+            let t = tokens[i];
+            switch (t) {
+                case '-X':
+                case '--request':
+                    method = stripQuotes(tokens[++i]).toUpperCase();
+                    break;
+                case '-H':
+                case '--header':
+                    const header = stripQuotes(tokens[++i]);
+                    const idx = header.indexOf(':');
+                    if (idx > -1) {
+                        headers[header.slice(0, idx).trim()] = header.slice(idx + 1).trim();
+                    }
+                    break;
+                case '-d':
+                case '--data':
+                case '--data-raw':
+                case '--data-binary':
+                case '--data-urlencode':
+                    body = stripQuotes(tokens[++i]);
+                    if (method === 'GET') method = 'POST';
+                    break;
+                default:
+                    if (!t.startsWith('-') && !url) {
+                        url = stripQuotes(t);
+                    }
+            }
+        }
+        if (!url) throw new Error('No URL found');
+        return { method, url, headers, body };
+    }
+
+    function formatBody(body) {
+        try {
+            const obj = JSON.parse(body);
+            return highlightJSON(escapeHtml(JSON.stringify(obj, null, 2)));
+        } catch {
+            return escapeHtml(body);
+        }
+    }
+
+    function prettifyCurl(source) {
+        const { method, url, headers, body } = parseCurl(source);
+        let html = '';
+        html += `<span class="hl-label">Method:</span> <span class="hl-operator">${method}</span>\n`;
+        html += `<span class="hl-label">URL:</span> <span class="hl-url">${escapeHtml(url)}</span>\n`;
+
+        if (Object.keys(headers).length) {
+            html += `<span class="hl-label">Headers:</span>\n`;
+            for (const [k, v] of Object.entries(headers)) {
+                html += `  <span class="hl-key">${escapeHtml(k)}:</span> <span class="hl-string">${escapeHtml(v)}</span>\n`;
+            }
+        }
+
+        if (body) {
+            html += `<span class="hl-label">Body:</span>\n`;
+            html += formatBody(body) + '\n';
+        }
+
+        return html;
+    }
+
+    // UI
+    const $input = document.getElementById('input');
+    const $inputHL = document.getElementById('inputHighlight');
+    const $output = document.getElementById('output');
+    const $errorBox = document.getElementById('errorBox');
+
+    function showError(msg) {
+        $errorBox.textContent = msg;
+        $errorBox.classList.add('show');
+    }
+    function hideError() {
+        $errorBox.classList.remove('show');
+    }
+
+    // Theme
+    document.getElementById('themeToggle').onclick = toggleTheme;
+    updateThemeButton();
+
+    // Input highlighting
+    $input.addEventListener('input', syncHighlight);
+    $input.addEventListener('scroll', () => {
+        $inputHL.scrollTop = $input.scrollTop;
+        $inputHL.scrollLeft = $input.scrollLeft;
+    });
+
+    // Prettify
+    document.getElementById('prettifyBtn').onclick = () => {
+        const source = $input.value.trim();
+        hideError();
+
+        if (!source) {
+            showError('Please paste some text first.');
+            return;
+        }
+
+        try {
+            if (source.startsWith('curl')) {
+                $output.innerHTML = prettifyCurl(source);
+            } else {
+                $output.innerHTML = prettifyJSON(source);
+            }
+            showToast('Prettified!', 'success');
+        } catch (err) {
+            showError('Error: ' + err.message);
+        }
+    };
+
+    // Clear
+    document.getElementById('clearInput').onclick = () => {
+        $input.value = '';
+        syncHighlight();
+        hideError();
+        $input.focus();
+    };
+
+    // Paste
+    document.getElementById('pasteInput').onclick = async () => {
+        try {
+            const text = await navigator.clipboard.readText();
+            $input.value = text;
+            syncHighlight();
+            showToast('Pasted!', 'success');
+        } catch {
+            showToast('Cannot access clipboard', 'error');
+        }
+    };
+
+    // Copy output
+    document.getElementById('copyOutput').onclick = () => {
+        const text = $output.innerText;
+        navigator.clipboard.writeText(text).then(() => showToast('Copied!', 'success'));
+    };
+
+    // Tab inserts spaces
+    $input.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const start = $input.selectionStart;
+            const end = $input.selectionEnd;
+            $input.value = $input.value.substring(0, start) + '  ' + $input.value.substring(end);
+            $input.selectionStart = $input.selectionEnd = start + 2;
+            syncHighlight();
+        }
+    });
+
+    // Ctrl+Enter to prettify
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            document.getElementById('prettifyBtn').click();
+        }
+    });
+</script>
+</body>
+</html>

@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Mongo ↔ Spring @Aggregation Formatter</title>
+    <style>
+        *{box-sizing:border-box}
+        body{margin:0;padding:1.5rem;font-family:system-ui,sans-serif;display:grid;gap:1rem;background:#f8f9fa}
+        h1{margin:0 0 .5rem;font-size:1.4rem;text-align:center}
+        .grid{display:grid;grid-template-columns:1fr;gap:1rem}
+        textarea{width:100%;height:320px;padding:.6rem;font-family:monospace;border:1px solid #ccc;border-radius:6px;resize:vertical}
+        button{padding:.4rem .9rem;border:0;border-radius:6px;cursor:pointer;font-weight:600;background:#1557ff;color:#fff}
+        button.alt{background:#6c757d}
+        button:active{transform:translateY(1px)}
+        .toolbar{display:flex;gap:.5rem;justify-content:center;margin-bottom:.3rem}
+        .row{display:flex;gap:.5rem;align-items:center}
+
+        /* Modal */
+        dialog{border:none;border-radius:12px;box-shadow:0 22px 70px 4px rgba(0,0,0,.2);padding:1rem 1.25rem;max-width:min(760px,92vw)}
+        dialog::backdrop{background:rgba(0,0,0,.45)}
+        .dlg-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem}
+        .dlg-title{font-weight:700}
+        .tokens{display:grid;grid-template-columns: 1fr 2fr 1fr;gap:.5rem;align-items:center;margin-top:.25rem}
+        .tokens code{background:#f1f3f5;padding:.25rem .5rem;border-radius:6px;display:inline-block}
+        .tokens input{width:100%;padding:.4rem .5rem;border:1px solid #ccc;border-radius:6px;font-family:monospace}
+        .tokens select{padding:.35rem .4rem;border:1px solid #ccc;border-radius:6px}
+        .hint{font-size:.85rem;color:#495057;margin-top:.25rem}
+        .dlg-footer{display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem}
+        .kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;background:#eee;border-radius:6px;padding:0 .35rem}
+    </style>
+</head>
+<body>
+<h1>Mongo ↔ Spring @Aggregation Formatter</h1>
+
+<!-- Top-right action row -->
+<div class="row" style="justify-content:flex-end;margin-top:-.25rem">
+    <!-- Imposta data-url o usa LEGACY_URL/parametri query -->
+    <button id="goLegacy" class="alt" data-url="">
+        Go to legacyVersion →
+    </button>
+</div>
+
+<div class="grid">
+    <div>
+        <div class="toolbar">
+            <button id="toMongo">Spring → Mongo</button>
+        </div>
+        <textarea id="springInput" placeholder="@Aggregation(pipeline = { … })"></textarea>
+    </div>
+
+    <div>
+        <div class="toolbar">
+            <button id="toSpring">Mongo → Spring</button>
+        </div>
+        <textarea id="mongoInput" placeholder='[ { "$match": … } ]'></textarea>
+    </div>
+</div>
+
+<!-- Placeholder Modal -->
+<dialog id="dlg">
+    <form method="dialog" id="dlgForm">
+        <div class="dlg-head">
+            <div class="dlg-title">Substitute placeholders</div>
+            <button value="cancel" class="alt" type="submit">Close</button>
+        </div>
+        <div class="hint">Auto-type prova <span class="kbd">JSON.parse</span>. Esempi: <span class="kbd">42</span>, <span class="kbd">true</span>, <span class="kbd">null</span>, <span class="kbd">"Mario"</span>, <span class="kbd">["A","B"]</span>, <span class="kbd">{"$oid":"..."}</span>.</div>
+        <div id="tokensWrap" class="tokens" style="margin-top:.75rem"></div>
+        <div class="dlg-footer">
+            <button id="dlgApply" value="apply">Apply & Convert</button>
+        </div>
+    </form>
+</dialog>
+
+<script>
+    //////////////////////////////////////////////////////////////////////////
+    // (Opzionale) URL legacy di default: sovrascrivilo qui se vuoi
+    //////////////////////////////////////////////////////////////////////////
+    const LEGACY_URL = 'https://massimilianopili.com/mongo/legacy/v0'; // es. "https://cat-mf.vercel.app"
+
+    //////////////////////////////////////////////////////////////////////////
+    // Utility: detect placeholders in Spring string
+    //////////////////////////////////////////////////////////////////////////
+    function detectPlaceholdersFromSpring(raw){
+        raw = String(raw || "");
+        const set = new Set();
+        for(const m of raw.matchAll(/\?(\d+)/g)) set.add(`?${m[1]}`);       // positional ?1, ?2, ...
+        const spel = raw.match(/[?:]#\{[^}]+\}/g) || [];                    // SpEL: ?#{...} or :#{...}
+        spel.forEach(t => set.add(t));
+        return Array.from(set);
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Value parser with minimal heuristics
+    //////////////////////////////////////////////////////////////////////////
+    function parseUserValue(input, mode){
+        if(mode === 'string') return String(input);
+        const s = String(input).trim();
+        if(s === '') return s;
+        try { return JSON.parse(s); } catch {}
+        const mOid = s.match(/^ObjectId\((['"])(.+)\1\)$/);
+        if(mOid) return { "$oid": mOid[2] };
+        const mIso = s.match(/^ISODate\((['"])(.+)\1\)$/);
+        if(mIso) return { "$date": mIso[2] };
+        return s;
+    }
+
+    // === Persistence: remember token -> { value, mode } in localStorage ===
+    const SUBS_STORAGE_KEY = 'aggfmt.substitutions.v1';
+
+    function loadSavedSubs(){
+        try { return JSON.parse(localStorage.getItem(SUBS_STORAGE_KEY) || '{}'); }
+        catch { return {}; }
+    }
+    function saveSavedSubs(map){
+        localStorage.setItem(SUBS_STORAGE_KEY, JSON.stringify(map));
+    }
+    function getSavedSub(token){
+        const all = loadSavedSubs();
+        return all[token];
+    }
+    function setSavedSub(token, value, mode){
+        const all = loadSavedSubs();
+        all[token] = { value, mode: mode || 'auto' };
+        saveSavedSubs(all);
+    }
+    function displayForInput(entry){
+        if(!entry) return '';
+        const { value, mode } = entry;
+        if(mode === 'string') return String(value);            // raw text for string mode
+        try {
+            // show JSON for auto mode so JSON.parse semantics are obvious
+            return typeof value === 'string' ? JSON.stringify(value) : JSON.stringify(value);
+        } catch {
+            return String(value);
+        }
+    }
+
+    function autoInsertCommasIfLikelyMissing(s) {
+        let out = '';
+        let inStr = false, esc = false;
+        const stack = [];            // track [{ or [ contexts]
+        let changed = false;
+
+        const top = () => stack.length ? stack[stack.length - 1] : null;
+
+        // helper: trova il prossimo char non spazio da idx (escluso)
+        function nextNonWS(i) {
+            let j = i + 1;
+            while (j < s.length && /\s/.test(s[j])) j++;
+            return j;
+        }
+
+        // helper: trova il precedente char non spazio da idx (escluso)
+        function prevNonWS(i) {
+            let j = i - 1;
+            while (j >= 0 && /\s/.test(s[j])) j--;
+            return j;
+        }
+
+        // helper: se da pos parte una stringa JSON, ritorna endIndex della stringa inclusivo (o -1)
+        function scanJSONString(start) {
+            if (s[start] !== '"') return -1;
+            let i = start + 1, esc = false;
+            while (i < s.length) {
+                const c = s[i];
+                if (esc) {
+                    esc = false;
+                    i++;
+                    continue;
+                }
+                if (c === '\\') {
+                    esc = true;
+                    i++;
+                    continue;
+                }
+                if (c === '"') return i; // chiusura
+                i++;
+            }
+            return -1;
+        }
+
+        // helper: se da pos parte un numero/boolean/null, ritorna fine token (inclusivo) o -1
+        function scanLiteral(start) {
+            const mNum = s.slice(start).match(/^[-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/);
+            if (mNum) return start + mNum[0].length - 1;
+            const mTrue = s.startsWith('true', start) ? 4 : 0;
+            const mFalse = s.startsWith('false', start) ? 5 : 0;
+            const mNull = s.startsWith('null', start) ? 4 : 0;
+            if (mTrue) return start + mTrue - 1;
+            if (mFalse) return start + mFalse - 1;
+            if (mNull) return start + mNull - 1;
+            return -1;
+        }
+
+        // stato: stiamo dentro a un oggetto e abbiamo appena chiuso un VALUE scalare
+        function maybeCommaAfterScalarValue(iEnd) {
+            if (top() !== '{') return;                   // serve oggetto padre
+            const p = prevNonWS(iEnd);
+            if (p >= 0 && s[p] === ':') return;          // la stringa appena chiusa era una chiave, non un valore
+            const j = nextNonWS(iEnd);
+            if (s[j] === '"') {                           // potenziale chiave
+                const endKey = scanJSONString(j);
+                if (endKey >= 0) {
+                    const afterKey = nextNonWS(endKey);
+                    if (s[afterKey] === ':') {                // è davvero una chiave
+                        out += ',';                            // inserisci la virgola
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        for (let i = 0; i < s.length; i++) {
+            const c = s[i];
+            out += c;
+
+            if (inStr) {
+                if (esc) {
+                    esc = false;
+                    continue;
+                }
+                if (c === '\\') {
+                    esc = true;
+                    continue;
+                }
+                if (c === '"') {
+                    inStr = false;
+                }           // chiusura stringa
+                continue;
+            }
+
+            if (c === '"') {
+                inStr = true;
+                continue;
+            }
+
+            if (c === '{' || c === '[') {
+                stack.push(c);
+                continue;
+            }
+
+            if (c === '}' || c === ']') {
+                const closing = c;
+                stack.pop();
+
+                // 1) tra oggetti adiacenti in array:  ... } {  ->  }, {
+                let j = nextNonWS(i);
+                if (top() === '[' && s[j] === '{') {
+                    out += ',';
+                    changed = true;
+                }
+
+                // 2) tra valori-chiave adiacenti in oggetto:  ... } "k":  ->  }, "k":
+                j = nextNonWS(i);
+                if (top() === '{' && s[j] === '"') {
+                    const endKey = scanJSONString(j);
+                    if (endKey >= 0 && s[nextNonWS(endKey)] === ':') {
+                        out += ',';
+                        changed = true;
+                    }
+                }
+                continue;
+            }
+
+            // 3) valore SCALARE finito (stringa già gestita sopra; qui numeri/bool/null):
+            //    se dopo c'è una chiave nello stesso oggetto -> metti virgola
+            if (/[0-9\-tfn]/.test(c)) { // possibile inizio literal
+                const start = i;
+                const end = scanLiteral(start);
+                if (end >= start) {
+                    // abbiamo consumato il literal; copia i char intermedi (già copiato c al primo giro)
+                    out += s.slice(i + 1, end + 1);
+                    maybeCommaAfterScalarValue(end);
+                    i = end;
+                }
+            }
+        }
+
+        // 4) cleanup: elimina virgole pendenti prima di } o ]
+        out = out.replace(/,\s*([}\]])/g, '$1');
+
+        return {text: out, changed};
+    }
+
+    function showContextAround(s, pos, span = 60) {
+        const a = Math.max(0, pos - span);
+        const b = Math.min(s.length, pos + span);
+        const ctx = s.slice(a, b);
+        const caret = ' '.repeat(pos - a) + '▲';
+        console.warn('JSON error @', pos, '\n' + ctx + '\n' + caret);
+    }
+
+
+    //////////////////////////////////////////////////////////////////////////
+    // Deep replace of sentinels in parsed JSON
+    //////////////////////////////////////////////////////////////////////////
+    function deepReplace(node, resolver){
+        if(Array.isArray(node)) return node.map(n => deepReplace(n, resolver));
+        if(node && typeof node === 'object'){
+            const out = {};
+            for(const [k,v] of Object.entries(node)) out[k] = deepReplace(v, resolver);
+            return out;
+        }
+        if(typeof node === 'string'){
+            const repl = resolver(node);
+            return repl !== undefined ? repl : node;
+        }
+        return node;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    //  FORWARD  : Spring  ->  Mongo JSON  (with sentinelization)
+    //////////////////////////////////////////////////////////////////////////
+    function springToMongo(raw, subsMap){
+        raw = String(raw);
+
+        // Rimuove //... e /* ... */ solo quando NON sei dentro una stringa "..."
+        function stripCommentsOutsideStrings(input) {
+            let out = '', inQ = false, esc = false;
+            for (let i = 0; i < input.length; i++) {
+                const c = input[i], n = input[i + 1];
+
+                if (inQ) {
+                    out += c;
+                    if (esc) { esc = false; continue; }
+                    if (c === '\\') { esc = true; continue; }
+                    if (c === '"') inQ = false;
+                    continue;
+                }
+
+                if (c === '"') { inQ = true; out += c; continue; }
+
+                // line comment //
+                if (c === '/' && n === '/') {
+                    while (i < input.length && input[i] !== '\n') i++;
+                    out += '\n'; // preserva la newline
+                    continue;
+                }
+
+                // block comment /* ... */
+                if (c === '/' && n === '*') {
+                    i += 2;
+                    while (i < input.length && !(input[i] === '*' && input[i + 1] === '/')) i++;
+                    i++; // salta '/'
+                    continue;
+                }
+
+                out += c;
+            }
+            return out;
+        }
+
+// --- all'inizio di springToMongo ---
+        raw = String(raw || '');
+        raw = stripCommentsOutsideStrings(raw);
+
+// Collassa concatenazioni Java: "...." + "...." → "........"
+        const concatRe = /"((?:[^"\\]|\\.)*)"\s*\+\s*"((?:[^"\\]|\\.)*)"/g;
+        while (concatRe.test(raw)) raw = raw.replace(concatRe, '"$1$2"');
+
+        // 1) Estrai le stringhe degli stage dall'annotazione (anche se manca la chiusura })
+//    Funziona sia con @Aggregation(pipeline = { ... }) sia con solo la lista di stringhe
+        let stageStrings;
+        {
+            // Se c'è l'annotazione completa, usa quella parte; altrimenti usa raw com'è
+            const m = raw.match(/pipeline\s*=\s*\{([\s\S]*?)\}\s*\)/);
+            const chunk = m ? m[1] : raw;
+
+            // Prendi tutte le stringhe racchiuse in doppi apici (gestendo eventuali escape)
+            const items = Array.from(chunk.matchAll(/"([^"\\]|\\.)*"/g)).map(x => x[0]);
+
+            if (items.length === 0) {
+                throw new Error('Nessuna stringa di stage trovata – incolla la lista di stringhe o l’annotazione completa @Aggregation.');
+            }
+
+            // Parse di ogni stringa singolarmente (JSON valido perché sono doppi apici)
+            stageStrings = items.map(s => JSON.parse('[' + s + ']')[0]);
+        }
+
+        // 3) Normalizza ogni stringa -> oggetto JS, gestendo ?n e SpEL via sentinelle
+        const spelBag = []; // index -> token originale (?#{...} / :#{...})
+        const stages = stageStrings.map(str => {
+            let s = String(str);
+
+            // 1) Normalizza apici → JSON
+            s = s.replace(/'/g, '"');
+
+            // 2) Quota le chiavi non quotate: { key: ... } o , key: ...
+            //    (evita le stringhe perché il delimitatore è { oppure ,)
+            s = s.replace(/([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g, '$1"$2":');
+
+            // 3) Placeholder posizionali ?n → sentinelle
+            s = s.replace(/([:\[,]\s*)\?(\d+)/g, (_, pre, n) => `${pre}"__P_${n}__"`);
+            s = s.replace(/\?(\d+)/g, '"__P_$1__"'); // fallback
+
+            // 4) SpEL (opzionale): ?#{...} o :#{...} → sentinelle
+            s = s.replace(/([:\[,\s])([?:]#\{[^}]+\})/g, (__, pre, token) => {
+                const idx = spelBag.push(token) - 1;
+                return `${pre}"__S_${idx}__"`;
+            });
+
+            s = s.trim();
+            // 5) rimuove la virgola finale nello stage-string
+            s = s.replace(/,\s*$/, '');
+            // 6) normalizza trailing comma prima di } o ]
+            s = s.replace(/,\s*([}\]])/g, '$1');
+
+            try {
+                return JSON.parse(s);
+            } catch (e1) {
+                let text = s;
+                let lastErr = e1;
+
+                for (let pass = 0; pass < 3; pass++) {
+                    const proposal = autoInsertCommasIfLikelyMissing(text);
+                    if (!proposal.changed) break;
+                    text = proposal.text;
+
+                    // safety: togli di nuovo virgole pendenti
+                    text = text.replace(/,\s*([}\]])/g, '$1');
+
+                    try {
+                        return JSON.parse(text); // success!
+                    } catch (e2) {
+                        lastErr = e2;
+                        // se c'è posizione, stampa contesto (dev console)
+                        const m = (e2.message || '').match(/position\s+(\d+)/i);
+                        if (m) showContextAround(text, Number(m[1]));
+                    }
+                }
+
+                // se arrivo qui, non l'ho sistemato: rilancio l'errore originale
+                throw lastErr;
+            }
+
+        });
+
+        // 4) Applica le sostituzioni
+        const resolver = (leaf) => {
+            const p = leaf.match(/^__P_(\d+)__$/);
+            if(p){
+                const key = `?${p[1]}`;
+                if(subsMap && key in subsMap) return subsMap[key];
+                return leaf;
+            }
+            const s = leaf.match(/^__S_(\d+)__$/);
+            if(s){
+                const tok = spelBag[Number(s[1])];
+                if(subsMap && tok in subsMap) return subsMap[tok];
+                return leaf;
+            }
+            return undefined;
+        };
+
+        const replaced = stages.map(st => deepReplace(st, resolver));
+        return JSON.stringify(replaced, null, 2);
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    //  REVERSE  : Mongo JSON  ->  Spring (unchanged)
+    //////////////////////////////////////////////////////////////////////////
+    function mongoToSpring(raw) {
+        let stages;
+        try { stages = JSON.parse(raw); }
+        catch { throw new Error('Left pane is not valid JSON'); }
+        if (!Array.isArray(stages)) throw new Error('JSON must be an array of stages');
+
+        const strings = stages.map(obj => {
+            let s = JSON.stringify(obj)
+                .replace(/\"/g, '"')
+                .replace(/"/g, "'")
+                .replace(/:'\?(\d+)'/g, ': ?$1'); // unwrap "?n" back to ?n (best effort)
+            return `"${s}"`;
+        });
+
+        return `@Aggregation(pipeline = {\n    ${strings.join(',\n    ')}\n})`;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // UI Wiring
+    //////////////////////////////////////////////////////////////////////////
+    const $spring = document.getElementById('springInput');
+    const $mongo  = document.getElementById('mongoInput');
+    const $dlg    = document.getElementById('dlg');
+    const $wrap   = document.getElementById('tokensWrap');
+    const $apply  = document.getElementById('dlgApply');
+
+    // Costruisce e apre il dialog di sostituzione
+    function openSubstitutionDialog(tokens){
+        $wrap.innerHTML = '';
+        const hdr = ['Token','Value','Mode'];
+        for(const h of hdr){ const b = document.createElement('b'); b.textContent=h; $wrap.appendChild(b); }
+
+        tokens.forEach((tok, i) => {
+            const code   = document.createElement('code');  code.textContent = tok; code.title = 'placeholder';
+            const input  = document.createElement('input'); input.placeholder = 'JSON value (e.g. 5, true, "Mario", [1,2])';
+            input.id = `tok_${i}`; input.dataset.token = tok;
+
+            const select = document.createElement('select'); select.id = `mode_${i}`;
+            select.innerHTML = '<option value="auto">auto</option><option value="string">string</option>';
+
+            // ← prefill from saved cache
+            const saved = getSavedSub(tok);
+            if(saved){
+                input.value = displayForInput(saved);
+                select.value = saved.mode || 'auto';
+            }
+
+            $wrap.append(code, input, select);
+        });
+
+        $dlg.showModal();
+    }
+
+    // Click Spring → Mongo: se ci sono placeholder, apri il dialog; altrimenti converti subito
+    document.getElementById('toMongo').onclick = () => {
+        const tokens = detectPlaceholdersFromSpring($spring.value);
+        if(tokens.length > 0){
+            openSubstitutionDialog(tokens);
+        } else {
+            try {
+                $mongo.value = springToMongo($spring.value, null);
+            } catch (e) { alert(e.message); }
+        }
+    };
+
+    // Click Mongo → Spring (immutato)
+    document.getElementById('toSpring').onclick = () => {
+        try {
+            $spring.value = mongoToSpring($mongo.value);
+        } catch (e) { alert(e.message); }
+    };
+
+    // Apply nel dialog
+    $apply.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        const inputs = Array.from($wrap.querySelectorAll('input[id^="tok_"]'));
+        const subs = {};
+
+        inputs.forEach(inp => {
+            const idx  = inp.id.split('_')[1];
+            const tok  = inp.dataset.token;
+            const mode = document.getElementById('mode_' + idx).value;
+            const raw  = inp.value.trim();
+            if(raw === '') return; // skip empty entries
+
+            const parsed = parseUserValue(raw, mode);
+            subs[tok] = parsed;                 // use now
+            setSavedSub(tok, parsed, mode);     // remember for next time
+        });
+
+        try {
+            $mongo.value = springToMongo($spring.value, subs);
+            $dlg.close('apply');
+        } catch(e){ alert(e.message); }
+    });
+
+    //////////////////////////////////////////////////////////////////////////
+    // Legacy button: resolve URL and redirect
+    //////////////////////////////////////////////////////////////////////////
+    document.getElementById('goLegacy').addEventListener('click', () => {
+        const btn = document.getElementById('goLegacy');
+        const qs  = new URLSearchParams(location.search);
+        const url = btn.dataset.url || LEGACY_URL || qs.get('legacy') || qs.get('legacyUrl');
+        if(!url){
+            const entered = prompt('Legacy URL not configured. Paste the legacy URL to navigate:');
+            if(entered && entered.trim()) {
+                location.href = entered.trim();
+            }
+            return;
+        }
+        location.href = url;
+    });
+</script>
+</body>
+</html>

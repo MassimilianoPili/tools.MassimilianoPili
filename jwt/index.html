@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JWT Decoder & Editor</title>
+    <link rel="stylesheet" href="/css/common.css">
+    <style>
+        /* JWT part colors */
+        :root, [data-theme="light"] {
+            --jwt-header: #e74c7c;
+            --jwt-payload: #9b59b6;
+            --jwt-signature: #2aa198;
+            --hl-key: #660e7a;
+            --hl-string: #067d17;
+            --hl-number: #1750eb;
+            --hl-bool: #000080;
+            --hl-null: #000080;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --jwt-header: #ff6b9d;
+                --jwt-payload: #c084fc;
+                --jwt-signature: #5eead4;
+                --hl-key: #9876aa;
+                --hl-string: #6a8759;
+                --hl-number: #6897bb;
+                --hl-bool: #cc7832;
+                --hl-null: #cc7832;
+            }
+        }
+        [data-theme="dark"] {
+            --jwt-header: #ff6b9d;
+            --jwt-payload: #c084fc;
+            --jwt-signature: #5eead4;
+            --hl-key: #9876aa;
+            --hl-string: #6a8759;
+            --hl-number: #6897bb;
+            --hl-bool: #cc7832;
+            --hl-null: #cc7832;
+        }
+
+        /* Page layout */
+        body {
+            padding: .75rem 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: .5rem;
+            min-height: 100vh;
+        }
+
+        /* Title bar */
+        .title-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: .5rem;
+            flex-wrap: wrap;
+        }
+        .title-bar h1 { font-size: 1.2rem; }
+        .title-actions { display: flex; align-items: center; gap: .5rem; }
+        .privacy-badge {
+            font-size: .72rem;
+            color: var(--success);
+            border: 1px solid var(--success);
+            border-radius: 999px;
+            padding: .12rem .5rem;
+            cursor: help;
+            white-space: nowrap;
+        }
+
+        /* Two-panel grid */
+        .jwt-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: .75rem;
+            flex: 1;
+            min-height: 0;
+        }
+        @media (min-width: 900px) {
+            .jwt-grid {
+                grid-template-columns: 1fr 1fr;
+                gap: .5rem;
+            }
+        }
+
+        /* Panes */
+        .pane {
+            display: flex;
+            flex-direction: column;
+            gap: .35rem;
+            min-height: 0;
+        }
+        .decoded-pane {
+            display: flex;
+            flex-direction: column;
+            gap: .6rem;
+            overflow-y: auto;
+        }
+        .pane-header {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            flex-wrap: wrap;
+        }
+        .pane-title {
+            font-weight: 600;
+            font-size: .9rem;
+            color: var(--muted);
+        }
+        .spacer { flex: 1; }
+
+        /* Sections in decoded pane */
+        .section {
+            display: flex;
+            flex-direction: column;
+            gap: .25rem;
+        }
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+        }
+        .section-title {
+            font-weight: 600;
+            font-size: .85rem;
+        }
+
+        /* Editor wrap (textarea + highlight overlay) */
+        .editor-wrap {
+            position: relative;
+            flex: 1;
+            min-height: 200px;
+            display: flex;
+        }
+        .editor-wrap.small {
+            min-height: 72px;
+            flex: 0 0 auto;
+        }
+        .editor-wrap.medium {
+            min-height: 120px;
+            flex: 1 1 auto;
+        }
+        .editor-wrap textarea {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            min-height: 0;
+            background: transparent;
+            color: transparent;
+            caret-color: var(--text);
+            z-index: 2;
+            resize: none;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: .5rem;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: .8rem;
+            line-height: 1.4;
+            tab-size: 2;
+        }
+        .editor-wrap textarea:focus {
+            outline: 2px solid var(--primary);
+            outline-offset: -1px;
+        }
+        .editor-wrap .highlight-layer {
+            flex: 1;
+            padding: .5rem;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: .8rem;
+            line-height: 1.4;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--surface);
+            color: var(--text);
+            white-space: pre-wrap;
+            word-break: break-all;
+            overflow: auto;
+            tab-size: 2;
+        }
+
+        /* JWT color classes */
+        .jwt-header-part { color: var(--jwt-header); }
+        .jwt-payload-part { color: var(--jwt-payload); }
+        .jwt-signature-part { color: var(--jwt-signature); }
+        .jwt-dot { color: var(--muted); font-weight: bold; }
+        .header-color { color: var(--jwt-header); }
+        .payload-color { color: var(--jwt-payload); }
+        .signature-color { color: var(--jwt-signature); }
+
+        /* Syntax highlighting */
+        .hl-key { color: var(--hl-key); }
+        .hl-string { color: var(--hl-string); }
+        .hl-number { color: var(--hl-number); }
+        .hl-bool { color: var(--hl-bool); font-weight: 600; }
+        .hl-null { color: var(--hl-null); font-weight: 600; }
+
+        /* Signature status */
+        .sig-status {
+            font-size: .72rem;
+            padding: .12rem .5rem;
+            border-radius: 999px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .sig-status.valid {
+            background: rgba(22, 163, 74, 0.12);
+            color: var(--success);
+            border: 1px solid rgba(22, 163, 74, 0.3);
+        }
+        .sig-status.invalid {
+            background: rgba(220, 38, 38, 0.12);
+            color: var(--danger);
+            border: 1px solid rgba(220, 38, 38, 0.3);
+        }
+        .sig-status.unverified {
+            background: rgba(100, 116, 139, 0.12);
+            color: var(--muted);
+            border: 1px solid var(--border);
+        }
+        .sig-status:empty { display: none; }
+
+        /* Signature controls */
+        .sig-controls {
+            display: flex;
+            flex-direction: column;
+            gap: .5rem;
+        }
+        .sig-controls .form-group { gap: .25rem; }
+        .key-input {
+            min-height: 56px;
+            font-size: .72rem !important;
+        }
+
+        /* Timestamp info */
+        .timestamp-info {
+            font-size: .78rem;
+            padding: .5rem .65rem;
+            border-radius: 6px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: .2rem;
+        }
+        .ts-row {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            flex-wrap: wrap;
+        }
+        .ts-label {
+            color: var(--muted);
+            font-weight: 500;
+            min-width: 6rem;
+        }
+        .ts-value {
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: .75rem;
+        }
+        .ts-expired { color: var(--danger); font-weight: 600; }
+        .ts-valid { color: var(--success); }
+        .ts-countdown {
+            font-size: .72rem;
+            font-style: italic;
+            margin-left: auto;
+        }
+
+        /* Expired token border */
+        .encoded-pane.expired-token .highlight-layer {
+            border-color: var(--danger);
+            box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.2);
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 1.5rem;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--text);
+            color: var(--bg);
+            padding: .6rem 1.2rem;
+            border-radius: 8px;
+            font-size: .875rem;
+            font-weight: 500;
+            opacity: 0;
+            transition: transform .3s ease, opacity .3s ease;
+            z-index: 1000;
+            pointer-events: none;
+        }
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+        .toast.success { background: var(--success); color: #fff; }
+        .toast.error { background: var(--danger); color: #fff; }
+
+        /* Button overrides */
+        button { padding: .35rem .7rem; border-radius: 5px; font-size: .8rem; }
+        button.icon-btn { padding: .25rem .45rem; font-size: .75rem; }
+
+        footer { margin-top: .25rem; }
+    </style>
+</head>
+<body>
+
+<div class="title-bar">
+    <h1>JWT Decoder & Editor</h1>
+    <div class="title-actions">
+        <span class="privacy-badge" title="All processing happens in your browser. No data is sent to any server.">&#128274; Client-side only</span>
+        <button id="themeToggle" class="icon-btn" title="Toggle dark/light mode">&#127763;</button>
+    </div>
+</div>
+
+<div class="jwt-grid">
+    <!-- LEFT: Encoded JWT -->
+    <div class="pane encoded-pane" id="encodedPane">
+        <div class="pane-header">
+            <span class="pane-title">Encoded</span>
+            <span class="spacer"></span>
+            <button id="pasteBtn" class="icon-btn" title="Paste from clipboard">&#128203;</button>
+            <button id="clearBtn" class="icon-btn" title="Clear all">&#10005;</button>
+            <button id="copyEncoded" class="icon-btn" title="Copy JWT">&#128464;</button>
+        </div>
+        <div class="editor-wrap">
+            <textarea id="encodedInput" spellcheck="false" placeholder="Paste a JWT token here..."></textarea>
+            <div id="encodedHighlight" class="highlight-layer"></div>
+        </div>
+    </div>
+
+    <!-- RIGHT: Decoded -->
+    <div class="pane decoded-pane">
+        <!-- Header -->
+        <div class="section">
+            <div class="section-header">
+                <span class="section-title header-color">Header</span>
+                <span class="spacer"></span>
+                <button class="icon-btn copy-section" data-target="headerEditor" title="Copy header JSON">&#128464;</button>
+            </div>
+            <div class="editor-wrap small">
+                <textarea id="headerEditor" spellcheck="false" placeholder='{"alg": "HS256", "typ": "JWT"}'></textarea>
+                <div id="headerHighlight" class="highlight-layer"></div>
+            </div>
+        </div>
+
+        <!-- Payload -->
+        <div class="section">
+            <div class="section-header">
+                <span class="section-title payload-color">Payload</span>
+                <span class="spacer"></span>
+                <button class="icon-btn copy-section" data-target="payloadEditor" title="Copy payload JSON">&#128464;</button>
+            </div>
+            <div class="editor-wrap medium">
+                <textarea id="payloadEditor" spellcheck="false" placeholder='{"sub": "1234567890", "name": "John Doe", "iat": 1516239022}'></textarea>
+                <div id="payloadHighlight" class="highlight-layer"></div>
+            </div>
+            <div id="timestampInfo" class="timestamp-info" style="display: none;"></div>
+        </div>
+
+        <!-- Signature -->
+        <div class="section">
+            <div class="section-header">
+                <span class="section-title signature-color">Verify Signature</span>
+                <span class="spacer"></span>
+                <span id="signatureStatus" class="sig-status"></span>
+            </div>
+            <div class="sig-controls">
+                <div class="form-group">
+                    <label for="algSelect">Algorithm</label>
+                    <select id="algSelect">
+                        <optgroup label="HMAC">
+                            <option value="HS256" selected>HS256</option>
+                            <option value="HS384">HS384</option>
+                            <option value="HS512">HS512</option>
+                        </optgroup>
+                        <optgroup label="RSA">
+                            <option value="RS256">RS256</option>
+                            <option value="RS384">RS384</option>
+                            <option value="RS512">RS512</option>
+                        </optgroup>
+                    </select>
+                </div>
+                <div id="hmacGroup" class="form-group">
+                    <label for="hmacSecret">Secret</label>
+                    <input type="text" id="hmacSecret" placeholder="your-256-bit-secret" />
+                </div>
+                <div id="rsaGroup" style="display: none;">
+                    <div class="form-group">
+                        <label for="rsaPublicKey">Public Key (PEM - for verification)</label>
+                        <textarea id="rsaPublicKey" class="key-input" spellcheck="false" placeholder="-----BEGIN PUBLIC KEY-----&#10;...&#10;-----END PUBLIC KEY-----"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="rsaPrivateKey">Private Key (PEM - for signing)</label>
+                        <textarea id="rsaPrivateKey" class="key-input" spellcheck="false" placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----"></textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<footer>
+    <a href="https://massimilianopili.com/home">&larr; Home</a>
+</footer>
+
+<div id="toast" class="toast"></div>
+
+<script>
+    // ═══════════════════════════════════════════════════════════════
+    // Theme Management
+    // ═══════════════════════════════════════════════════════════════
+    const THEME_KEY = 'jwt.theme';
+
+    function getSystemTheme() {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    function getSavedTheme() { return localStorage.getItem(THEME_KEY); }
+    function setTheme(theme) {
+        if (theme === 'system') {
+            document.documentElement.removeAttribute('data-theme');
+            localStorage.removeItem(THEME_KEY);
+        } else {
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem(THEME_KEY, theme);
+        }
+        updateThemeButton();
+    }
+    function updateThemeButton() {
+        const btn = document.getElementById('themeToggle');
+        const saved = getSavedTheme();
+        const current = saved || getSystemTheme();
+        btn.innerHTML = current === 'dark' ? '&#9728;&#65039;' : '&#127769;';
+        btn.title = current === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+    }
+    function toggleTheme() {
+        const saved = getSavedTheme();
+        const current = saved || getSystemTheme();
+        setTheme(current === 'dark' ? 'light' : 'dark');
+    }
+    (function initTheme() {
+        const saved = getSavedTheme();
+        if (saved) document.documentElement.setAttribute('data-theme', saved);
+    })();
+
+    // ═══════════════════════════════════════════════════════════════
+    // Toast
+    // ═══════════════════════════════════════════════════════════════
+    const $toast = document.getElementById('toast');
+    let toastTimeout;
+    function showToast(msg, type = '') {
+        clearTimeout(toastTimeout);
+        $toast.textContent = msg;
+        $toast.className = 'toast' + (type ? ' ' + type : '');
+        requestAnimationFrame(() => $toast.classList.add('show'));
+        toastTimeout = setTimeout(() => $toast.classList.remove('show'), 2500);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Base64URL Utilities
+    // ═══════════════════════════════════════════════════════════════
+    function base64urlEncode(data) {
+        let bytes;
+        if (typeof data === 'string') {
+            bytes = new TextEncoder().encode(data);
+        } else if (data instanceof ArrayBuffer) {
+            bytes = new Uint8Array(data);
+        } else {
+            bytes = data;
+        }
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    function base64urlDecode(str) {
+        let b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+        while (b64.length % 4) b64 += '=';
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return bytes;
+    }
+
+    function base64urlDecodeStr(str) {
+        return new TextDecoder().decode(base64urlDecode(str));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // JWT Parse / Build
+    // ═══════════════════════════════════════════════════════════════
+    function stripBearer(str) {
+        return str.replace(/^bearer\s+/i, '');
+    }
+
+    function parseJWT(token) {
+        token = stripBearer(token.trim());
+        const parts = token.split('.');
+        if (parts.length !== 3) return null;
+        try {
+            const header = JSON.parse(base64urlDecodeStr(parts[0]));
+            const payload = JSON.parse(base64urlDecodeStr(parts[1]));
+            return {
+                header,
+                payload,
+                headerB64: parts[0],
+                payloadB64: parts[1],
+                signatureB64: parts[2],
+                raw: token
+            };
+        } catch {
+            return null;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Web Crypto - Algorithm Mapping
+    // ═══════════════════════════════════════════════════════════════
+    function algToWebCrypto(alg) {
+        const map = {
+            'HS256': { name: 'HMAC', hash: 'SHA-256' },
+            'HS384': { name: 'HMAC', hash: 'SHA-384' },
+            'HS512': { name: 'HMAC', hash: 'SHA-512' },
+            'RS256': { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+            'RS384': { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-384' },
+            'RS512': { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-512' },
+        };
+        return map[alg] || null;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Web Crypto - HMAC
+    // ═══════════════════════════════════════════════════════════════
+    async function signHMAC(algorithm, secretStr, data) {
+        const enc = new TextEncoder();
+        const { hash } = algToWebCrypto(algorithm);
+        const key = await crypto.subtle.importKey(
+            'raw', enc.encode(secretStr),
+            { name: 'HMAC', hash: { name: hash } },
+            false, ['sign']
+        );
+        return crypto.subtle.sign('HMAC', key, enc.encode(data));
+    }
+
+    async function verifyHMAC(algorithm, secretStr, data, signatureBytes) {
+        const enc = new TextEncoder();
+        const { hash } = algToWebCrypto(algorithm);
+        const key = await crypto.subtle.importKey(
+            'raw', enc.encode(secretStr),
+            { name: 'HMAC', hash: { name: hash } },
+            false, ['verify']
+        );
+        return crypto.subtle.verify('HMAC', key, signatureBytes, enc.encode(data));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Web Crypto - RSA
+    // ═══════════════════════════════════════════════════════════════
+    function pemToArrayBuffer(pem) {
+        const b64 = pem
+            .replace(/-----BEGIN [A-Z ]+-----/, '')
+            .replace(/-----END [A-Z ]+-----/, '')
+            .replace(/\s/g, '');
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return bytes.buffer;
+    }
+
+    function detectPKCS1(pem) {
+        return /BEGIN RSA (PRIVATE|PUBLIC) KEY/.test(pem);
+    }
+
+    async function signRSA(algorithm, privateKeyPEM, data) {
+        if (detectPKCS1(privateKeyPEM)) throw new Error('PKCS#1 format detected. Please use PKCS#8 (BEGIN PRIVATE KEY).');
+        const { name, hash } = algToWebCrypto(algorithm);
+        const keyBuffer = pemToArrayBuffer(privateKeyPEM);
+        const key = await crypto.subtle.importKey(
+            'pkcs8', keyBuffer,
+            { name, hash: { name: hash } },
+            false, ['sign']
+        );
+        return crypto.subtle.sign(name, key, new TextEncoder().encode(data));
+    }
+
+    async function verifyRSA(algorithm, publicKeyPEM, data, signatureBytes) {
+        if (detectPKCS1(publicKeyPEM)) throw new Error('PKCS#1 format detected. Please use SPKI (BEGIN PUBLIC KEY).');
+        const { name, hash } = algToWebCrypto(algorithm);
+        const keyBuffer = pemToArrayBuffer(publicKeyPEM);
+        const key = await crypto.subtle.importKey(
+            'spki', keyBuffer,
+            { name, hash: { name: hash } },
+            false, ['verify']
+        );
+        return crypto.subtle.verify(name, key, signatureBytes, new TextEncoder().encode(data));
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Syntax Highlighting
+    // ═══════════════════════════════════════════════════════════════
+    function escapeHtml(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function highlightJSON(text) {
+        let html = escapeHtml(text);
+        html = html.replace(/("(?:\\.|[^"\\])*")(\s*:)/g, '<span class="hl-key">$1</span>$2');
+        html = html.replace(/:(\s*)("(?:\\.|[^"\\])*")(?=[,\s\]\}]|$)/gm, ':<span class="hl-string">$1$2</span>');
+        html = html.replace(/:(\s*)(-?\d+\.?\d*(?:[eE][+-]?\d+)?)(?=[,\s\]\}]|$)/gm, ':<span class="hl-number">$1$2</span>');
+        html = html.replace(/:(\s*)(true|false)(?=[,\s\]\}]|$)/gm, ':<span class="hl-bool">$1$2</span>');
+        html = html.replace(/:(\s*)(null)(?=[,\s\]\}]|$)/gm, ':<span class="hl-null">$1$2</span>');
+        return html;
+    }
+
+    function highlightEncodedJWT(text) {
+        const escaped = escapeHtml(text.trim());
+        const parts = escaped.split('.');
+        if (parts.length === 3) {
+            return '<span class="jwt-header-part">' + parts[0] + '</span>' +
+                   '<span class="jwt-dot">.</span>' +
+                   '<span class="jwt-payload-part">' + parts[1] + '</span>' +
+                   '<span class="jwt-dot">.</span>' +
+                   '<span class="jwt-signature-part">' + parts[2] + '</span>';
+        }
+        return escaped;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Timestamp Detection & Display
+    // ═══════════════════════════════════════════════════════════════
+    const TIMESTAMP_CLAIMS = {
+        'iat': 'Issued At',
+        'exp': 'Expiration',
+        'nbf': 'Not Before',
+        'auth_time': 'Auth Time'
+    };
+
+    function isPlausibleTimestamp(value) {
+        return typeof value === 'number' && value > 1000000000 && value < 10000000000;
+    }
+
+    function formatTimestamp(unix) {
+        const d = new Date(unix * 1000);
+        return d.toISOString().replace('T', ' ').replace(/\.\d{3}Z/, ' UTC');
+    }
+
+    function timeAgo(unix) {
+        const now = Date.now() / 1000;
+        const diff = unix - now;
+        const abs = Math.abs(diff);
+        let unit, val;
+        if (abs < 60) { val = Math.floor(abs); unit = 's'; }
+        else if (abs < 3600) { val = Math.floor(abs / 60); unit = 'm'; }
+        else if (abs < 86400) { val = Math.floor(abs / 3600); unit = 'h'; }
+        else { val = Math.floor(abs / 86400); unit = 'd'; }
+        return diff > 0 ? `in ${val}${unit}` : `${val}${unit} ago`;
+    }
+
+    function detectAndDisplayTimestamps(payload) {
+        const container = document.getElementById('timestampInfo');
+        let html = '';
+        let hasAny = false;
+        const nowUnix = Date.now() / 1000;
+
+        for (const [claim, label] of Object.entries(TIMESTAMP_CLAIMS)) {
+            if (payload[claim] !== undefined && isPlausibleTimestamp(payload[claim])) {
+                hasAny = true;
+                const ts = payload[claim];
+                const formatted = formatTimestamp(ts);
+                const relative = timeAgo(ts);
+                const isExpired = claim === 'exp' && ts < nowUnix;
+                const isNotYetValid = claim === 'nbf' && ts > nowUnix;
+
+                let cls = '';
+                if (isExpired) cls = 'ts-expired';
+                else if (isNotYetValid) cls = 'ts-expired';
+                else if (claim === 'exp') cls = 'ts-valid';
+
+                html += '<div class="ts-row">' +
+                    '<span class="ts-label">' + label + ' (' + claim + ')</span>' +
+                    '<span class="ts-value ' + cls + '">' + formatted + '</span>' +
+                    '<span class="ts-countdown ' + cls + '">' + relative + '</span>' +
+                    '</div>';
+            }
+        }
+
+        container.innerHTML = html;
+        container.style.display = hasAny ? '' : 'none';
+
+        // Expired token highlight on encoded pane
+        const encodedPane = document.getElementById('encodedPane');
+        const expVal = payload['exp'];
+        if (expVal && isPlausibleTimestamp(expVal) && expVal < nowUnix) {
+            encodedPane.classList.add('expired-token');
+        } else {
+            encodedPane.classList.remove('expired-token');
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // DOM References
+    // ═══════════════════════════════════════════════════════════════
+    const $encodedInput = document.getElementById('encodedInput');
+    const $encodedHL = document.getElementById('encodedHighlight');
+    const $headerEditor = document.getElementById('headerEditor');
+    const $headerHL = document.getElementById('headerHighlight');
+    const $payloadEditor = document.getElementById('payloadEditor');
+    const $payloadHL = document.getElementById('payloadHighlight');
+    const $algSelect = document.getElementById('algSelect');
+    const $hmacGroup = document.getElementById('hmacGroup');
+    const $rsaGroup = document.getElementById('rsaGroup');
+    const $hmacSecret = document.getElementById('hmacSecret');
+    const $rsaPublicKey = document.getElementById('rsaPublicKey');
+    const $rsaPrivateKey = document.getElementById('rsaPrivateKey');
+    const $sigStatus = document.getElementById('signatureStatus');
+
+    // ═══════════════════════════════════════════════════════════════
+    // Highlight Sync Helpers
+    // ═══════════════════════════════════════════════════════════════
+    function syncEncodedHighlight() {
+        $encodedHL.innerHTML = highlightEncodedJWT($encodedInput.value) + '\n';
+        $encodedHL.scrollTop = $encodedInput.scrollTop;
+        $encodedHL.scrollLeft = $encodedInput.scrollLeft;
+    }
+
+    function syncHeaderHighlight() {
+        $headerHL.innerHTML = highlightJSON($headerEditor.value) + '\n';
+        $headerHL.scrollTop = $headerEditor.scrollTop;
+    }
+
+    function syncPayloadHighlight() {
+        $payloadHL.innerHTML = highlightJSON($payloadEditor.value) + '\n';
+        $payloadHL.scrollTop = $payloadEditor.scrollTop;
+    }
+
+    // Scroll sync for all editor pairs
+    $encodedInput.addEventListener('scroll', () => {
+        $encodedHL.scrollTop = $encodedInput.scrollTop;
+        $encodedHL.scrollLeft = $encodedInput.scrollLeft;
+    });
+    $headerEditor.addEventListener('scroll', () => {
+        $headerHL.scrollTop = $headerEditor.scrollTop;
+    });
+    $payloadEditor.addEventListener('scroll', () => {
+        $payloadHL.scrollTop = $payloadEditor.scrollTop;
+    });
+
+    // ═══════════════════════════════════════════════════════════════
+    // Signature Status
+    // ═══════════════════════════════════════════════════════════════
+    function setSignatureStatus(text, type) {
+        $sigStatus.textContent = text;
+        $sigStatus.className = 'sig-status' + (type ? ' ' + type : '');
+    }
+
+    let verifyCounter = 0;
+
+    async function verifySignature() {
+        const myCounter = ++verifyCounter;
+        const token = stripBearer($encodedInput.value.trim());
+        const parsed = parseJWT(token);
+        if (!parsed || !parsed.signatureB64) {
+            setSignatureStatus('', '');
+            return;
+        }
+
+        const sigInput = parsed.headerB64 + '.' + parsed.payloadB64;
+        const sigBytes = base64urlDecode(parsed.signatureB64);
+        const alg = $algSelect.value;
+
+        try {
+            let valid;
+            if (alg.startsWith('HS')) {
+                const secret = $hmacSecret.value;
+                if (!secret) {
+                    setSignatureStatus('Enter secret to verify', 'unverified');
+                    return;
+                }
+                valid = await verifyHMAC(alg, secret, sigInput, sigBytes);
+            } else {
+                const pubKey = $rsaPublicKey.value.trim();
+                if (!pubKey) {
+                    setSignatureStatus('Enter public key to verify', 'unverified');
+                    return;
+                }
+                valid = await verifyRSA(alg, pubKey, sigInput, sigBytes);
+            }
+            if (myCounter !== verifyCounter) return; // stale
+            setSignatureStatus(
+                valid ? 'Signature Verified' : 'Invalid Signature',
+                valid ? 'valid' : 'invalid'
+            );
+        } catch (e) {
+            if (myCounter !== verifyCounter) return;
+            setSignatureStatus(e.message || 'Verification error', 'invalid');
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Bidirectional Sync
+    // ═══════════════════════════════════════════════════════════════
+    let isSyncing = false;
+    let encodedTimer, decodedTimer;
+
+    // Direction A: Encoded -> Decoded
+    function onEncodedChange() {
+        if (isSyncing) return;
+        isSyncing = true;
+        try {
+            syncEncodedHighlight();
+            const token = stripBearer($encodedInput.value.trim());
+            const parsed = parseJWT(token);
+
+            if (!parsed) {
+                // Not a valid JWT - clear decoded but keep what user typed
+                if (!$encodedInput.value.trim()) {
+                    $headerEditor.value = '';
+                    $payloadEditor.value = '';
+                    syncHeaderHighlight();
+                    syncPayloadHighlight();
+                    document.getElementById('timestampInfo').style.display = 'none';
+                    document.getElementById('encodedPane').classList.remove('expired-token');
+                    setSignatureStatus('', '');
+                }
+                isSyncing = false;
+                return;
+            }
+
+            // Populate decoded editors
+            $headerEditor.value = JSON.stringify(parsed.header, null, 2);
+            $payloadEditor.value = JSON.stringify(parsed.payload, null, 2);
+            syncHeaderHighlight();
+            syncPayloadHighlight();
+
+            // Auto-detect algorithm
+            if (parsed.header.alg && algToWebCrypto(parsed.header.alg)) {
+                $algSelect.value = parsed.header.alg;
+                toggleAlgVisibility();
+            }
+
+            // Timestamps
+            detectAndDisplayTimestamps(parsed.payload);
+
+            // Verify signature async
+            verifySignature();
+        } finally {
+            isSyncing = false;
+        }
+    }
+
+    // Direction B: Decoded -> Encoded
+    async function onDecodedChange() {
+        if (isSyncing) return;
+        isSyncing = true;
+        try {
+            syncHeaderHighlight();
+            syncPayloadHighlight();
+
+            let headerObj, payloadObj;
+            try {
+                headerObj = JSON.parse($headerEditor.value);
+            } catch {
+                isSyncing = false;
+                return; // Invalid header JSON, don't update
+            }
+            try {
+                payloadObj = JSON.parse($payloadEditor.value);
+            } catch {
+                isSyncing = false;
+                return; // Invalid payload JSON, don't update
+            }
+
+            // Ensure alg in header matches selection
+            headerObj.alg = $algSelect.value;
+            if (!headerObj.typ) headerObj.typ = 'JWT';
+
+            const headerB64 = base64urlEncode(JSON.stringify(headerObj));
+            const payloadB64 = base64urlEncode(JSON.stringify(payloadObj));
+            const sigInput = headerB64 + '.' + payloadB64;
+
+            let sigB64 = '';
+            const alg = $algSelect.value;
+
+            try {
+                if (alg.startsWith('HS')) {
+                    const secret = $hmacSecret.value;
+                    if (secret) {
+                        const sig = await signHMAC(alg, secret, sigInput);
+                        sigB64 = base64urlEncode(sig);
+                    }
+                } else {
+                    const privKey = $rsaPrivateKey.value.trim();
+                    if (privKey) {
+                        const sig = await signRSA(alg, privKey, sigInput);
+                        sigB64 = base64urlEncode(sig);
+                    }
+                }
+            } catch {
+                // Signing failed, leave signature empty
+            }
+
+            $encodedInput.value = headerB64 + '.' + payloadB64 + '.' + sigB64;
+            syncEncodedHighlight();
+
+            // Also update header editor to reflect alg change
+            $headerEditor.value = JSON.stringify(headerObj, null, 2);
+            syncHeaderHighlight();
+
+            detectAndDisplayTimestamps(payloadObj);
+            verifySignature();
+        } finally {
+            isSyncing = false;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Algorithm Visibility Toggle
+    // ═══════════════════════════════════════════════════════════════
+    function toggleAlgVisibility() {
+        const isRSA = $algSelect.value.startsWith('RS');
+        $hmacGroup.style.display = isRSA ? 'none' : '';
+        $rsaGroup.style.display = isRSA ? '' : 'none';
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Event Wiring
+    // ═══════════════════════════════════════════════════════════════
+
+    // Theme
+    document.getElementById('themeToggle').onclick = toggleTheme;
+    updateThemeButton();
+
+    // Encoded input
+    $encodedInput.addEventListener('input', () => {
+        syncEncodedHighlight();
+        clearTimeout(encodedTimer);
+        encodedTimer = setTimeout(onEncodedChange, 150);
+    });
+
+    // Header / Payload editors
+    $headerEditor.addEventListener('input', () => {
+        syncHeaderHighlight();
+        clearTimeout(decodedTimer);
+        decodedTimer = setTimeout(onDecodedChange, 200);
+    });
+    $payloadEditor.addEventListener('input', () => {
+        syncPayloadHighlight();
+        clearTimeout(decodedTimer);
+        decodedTimer = setTimeout(onDecodedChange, 200);
+    });
+
+    // Algorithm change
+    $algSelect.addEventListener('change', () => {
+        toggleAlgVisibility();
+        onDecodedChange();
+    });
+
+    // Secret / key change
+    $hmacSecret.addEventListener('input', () => {
+        clearTimeout(decodedTimer);
+        decodedTimer = setTimeout(() => verifySignature(), 200);
+    });
+    $rsaPublicKey.addEventListener('input', () => {
+        clearTimeout(decodedTimer);
+        decodedTimer = setTimeout(() => verifySignature(), 300);
+    });
+    $rsaPrivateKey.addEventListener('input', () => {
+        clearTimeout(decodedTimer);
+        decodedTimer = setTimeout(onDecodedChange, 300);
+    });
+
+    // Paste button
+    document.getElementById('pasteBtn').onclick = async () => {
+        try {
+            const text = await navigator.clipboard.readText();
+            $encodedInput.value = text;
+            syncEncodedHighlight();
+            onEncodedChange();
+            showToast('Pasted!', 'success');
+        } catch {
+            showToast('Cannot access clipboard', 'error');
+        }
+    };
+
+    // Clear button
+    document.getElementById('clearBtn').onclick = () => {
+        $encodedInput.value = '';
+        $headerEditor.value = '';
+        $payloadEditor.value = '';
+        $hmacSecret.value = '';
+        $rsaPublicKey.value = '';
+        $rsaPrivateKey.value = '';
+        syncEncodedHighlight();
+        syncHeaderHighlight();
+        syncPayloadHighlight();
+        document.getElementById('timestampInfo').style.display = 'none';
+        document.getElementById('encodedPane').classList.remove('expired-token');
+        setSignatureStatus('', '');
+        $encodedInput.focus();
+    };
+
+    // Copy encoded JWT
+    document.getElementById('copyEncoded').onclick = () => {
+        const text = $encodedInput.value.trim();
+        if (!text) return;
+        navigator.clipboard.writeText(text).then(() => showToast('JWT copied!', 'success'));
+    };
+
+    // Copy section buttons
+    document.querySelectorAll('.copy-section').forEach(btn => {
+        btn.onclick = () => {
+            const target = document.getElementById(btn.dataset.target);
+            if (!target || !target.value.trim()) return;
+            navigator.clipboard.writeText(target.value.trim())
+                .then(() => showToast('Copied!', 'success'));
+        };
+    });
+
+    // Tab inserts spaces in textareas
+    [$encodedInput, $headerEditor, $payloadEditor].forEach(ta => {
+        ta.addEventListener('keydown', (e) => {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = ta.selectionStart;
+                const end = ta.selectionEnd;
+                ta.value = ta.value.substring(0, start) + '  ' + ta.value.substring(end);
+                ta.selectionStart = ta.selectionEnd = start + 2;
+                ta.dispatchEvent(new Event('input'));
+            }
+        });
+    });
+
+    // Ctrl+V into encoded triggers decode
+    $encodedInput.addEventListener('paste', () => {
+        // The paste event fires before the value updates, so defer
+        setTimeout(() => {
+            syncEncodedHighlight();
+            onEncodedChange();
+        }, 0);
+    });
+
+    // Init algorithm visibility
+    toggleAlgVisibility();
+</script>
+</body>
+</html>
