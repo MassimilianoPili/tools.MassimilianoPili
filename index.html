@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dev Tools</title>
+    <link rel="stylesheet" href="/css/common.css">
+    <style>
+        body {
+            display: grid;
+            place-items: center;
+            padding: 4vh 1rem;
+        }
+        .wrap {
+            width: min(720px, 96vw);
+        }
+        header {
+            text-align: center;
+            display: grid;
+            gap: .35rem;
+            margin-bottom: 1.5rem;
+        }
+        header p { color: var(--muted); font-size: .95rem }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1rem;
+        }
+        .tile {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 1.25rem;
+            text-decoration: none;
+            color: inherit;
+            display: grid;
+            gap: .4rem;
+            transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+        }
+        .tile:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 30px var(--ring);
+            border-color: var(--brand);
+        }
+        .tile h2 { font-size: 1.05rem; margin: 0 }
+        .tile p { margin: 0; color: var(--muted); font-size: .9rem }
+
+        footer {
+            margin-top: 2rem;
+            text-align: center;
+        }
+        footer a { color: var(--muted); font-size: .85rem }
+    </style>
+</head>
+<body>
+<main class="wrap">
+    <header>
+        <h1>Dev Tools</h1>
+        <p>Browser-based utilities. No frameworks, no sign-up.</p>
+    </header>
+
+    <section class="grid">
+        <a class="tile" href="/mongo">
+            <h2>Mongo Converter</h2>
+            <p>MongoDB &harr; Spring @Aggregation bidirectional converter.</p>
+        </a>
+
+        <a class="tile" href="/prettifier">
+            <h2>Prettifier</h2>
+            <p>JSON &amp; cURL formatter with syntax highlighting.</p>
+        </a>
+
+        <a class="tile" href="/base64">
+            <h2>Base64</h2>
+            <p>Encode files to Base64 or decode back with type detection.</p>
+        </a>
+
+        <a class="tile" href="/jwt">
+            <h2>JWT</h2>
+            <p>Decode, edit &amp; inspect JSON Web Tokens.</p>
+        </a>
+    </section>
+
+    <footer>
+        <a href="https://massimilianopili.com/home">&larr; massimilianopili.com</a>
+    </footer>
+</main>
+</body>
+</html>
