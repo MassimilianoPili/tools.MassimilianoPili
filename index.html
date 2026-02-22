@@ -12,15 +12,14 @@
             padding: 4vh 1rem;
         }
         .wrap {
-            width: min(720px, 96vw);
+            width: min(980px, 96vw);
         }
         header {
             text-align: center;
             display: grid;
             gap: .35rem;
-            margin-bottom: 1.5rem;
         }
-        header p { color: var(--muted); font-size: .95rem }
+        .hint { color: var(--muted); font-size: .95rem }
 
         .grid {
             display: grid;
@@ -32,54 +31,100 @@
             border: 1px solid var(--border);
             border-radius: var(--radius);
             box-shadow: var(--shadow);
-            padding: 1.25rem;
+            padding: 1.1rem;
             text-decoration: none;
             color: inherit;
             display: grid;
-            gap: .4rem;
+            gap: .5rem;
+            position: relative;
             transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
         }
-        .tile:hover {
+        .tile:focus, .tile:hover {
+            outline: none;
             transform: translateY(-2px);
             box-shadow: 0 14px 30px var(--ring);
             border-color: var(--brand);
         }
-        .tile h2 { font-size: 1.05rem; margin: 0 }
-        .tile p { margin: 0; color: var(--muted); font-size: .9rem }
-
-        footer {
-            margin-top: 2rem;
-            text-align: center;
+        .tile .tag {
+            display: inline-flex;
+            align-items: center;
+            gap: .5ch;
+            width: max-content;
+            padding: .15rem .5rem;
+            font-size: .78rem;
+            border-radius: 999px;
+            border: 1px dashed var(--border);
+            color: var(--muted);
         }
-        footer a { color: var(--muted); font-size: .85rem }
+        .tile h2 { font-size: 1.05rem; line-height: 1.2; margin: .2rem 0 0 }
+        .tile p { margin: 0; color: var(--muted); font-size: .92rem }
+
+        .actions { display: flex; gap: .5rem; margin-top: .25rem }
+        .btn {
+            appearance: none;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text);
+            border-radius: 10px;
+            padding: .45rem .75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: border-color .12s ease, background .12s ease, transform .12s ease;
+        }
+        .btn:focus-visible { outline: 2px solid var(--ring) }
+        .btn:hover { border-color: var(--brand) }
+        .btn.primary { background: var(--brand); color: white; border-color: var(--brand) }
+        .btn.primary:hover { background: var(--brand-600); }
+
+        footer { margin-top: .25rem }
     </style>
 </head>
 <body>
-<main class="wrap">
+<main class="wrap" role="main">
     <header>
         <h1>Dev Tools</h1>
-        <p>Browser-based utilities. No frameworks, no sign-up.</p>
+        <div class="hint">Press <kbd>1</kbd>-<kbd>4</kbd> or <kbd>M</kbd>/<kbd>P</kbd>/<kbd>B</kbd>/<kbd>J</kbd>. Hold <kbd>Ctrl</kbd> (or <kbd>&#8984;</kbd>) to open in a new tab.</div>
     </header>
 
-    <section class="grid">
-        <a class="tile" href="/mongo">
+    <section class="grid" aria-label="Tools">
+        <a class="tile" href="/mongo" data-key="1" data-char="m">
+            <span class="tag">#1 &bull; <span class="path">/mongo</span></span>
             <h2>Mongo Converter</h2>
             <p>MongoDB &harr; Spring @Aggregation bidirectional converter.</p>
+            <div class="actions">
+                <button class="btn primary" data-go>Go</button>
+                <button class="btn" data-copy>Copy path</button>
+            </div>
         </a>
 
-        <a class="tile" href="/prettifier">
+        <a class="tile" href="/prettifier" data-key="2" data-char="p">
+            <span class="tag">#2 &bull; <span class="path">/prettifier</span></span>
             <h2>Prettifier</h2>
             <p>JSON &amp; cURL formatter with syntax highlighting.</p>
+            <div class="actions">
+                <button class="btn primary" data-go>Go</button>
+                <button class="btn" data-copy>Copy path</button>
+            </div>
         </a>
 
-        <a class="tile" href="/base64">
+        <a class="tile" href="/base64" data-key="3" data-char="b">
+            <span class="tag">#3 &bull; <span class="path">/base64</span></span>
             <h2>Base64</h2>
             <p>Encode files to Base64 or decode back with type detection.</p>
+            <div class="actions">
+                <button class="btn primary" data-go>Go</button>
+                <button class="btn" data-copy>Copy path</button>
+            </div>
         </a>
 
-        <a class="tile" href="/jwt">
+        <a class="tile" href="/jwt" data-key="4" data-char="j">
+            <span class="tag">#4 &bull; <span class="path">/jwt</span></span>
             <h2>JWT</h2>
             <p>Decode, edit &amp; inspect JSON Web Tokens.</p>
+            <div class="actions">
+                <button class="btn primary" data-go>Go</button>
+                <button class="btn" data-copy>Copy path</button>
+            </div>
         </a>
     </section>
 
@@ -87,5 +132,56 @@
         <a href="https://massimilianopili.com/home">&larr; massimilianopili.com</a>
     </footer>
 </main>
+
+<script>
+    document.querySelectorAll('.tile').forEach(tile => {
+        tile.addEventListener('click', (ev) => {
+            const copyBtn = ev.target.closest('[data-copy]');
+            const targetBtn = ev.target.closest('[data-go]');
+            if (copyBtn) {
+                ev.preventDefault();
+                const url = new URL(tile.getAttribute('href'), location.origin).toString();
+                navigator.clipboard?.writeText(url).then(() => {
+                    copyBtn.textContent = 'Copied!';
+                    setTimeout(() => copyBtn.textContent = 'Copy path', 1000);
+                }).catch(() => {
+                    copyBtn.textContent = 'Failed';
+                    setTimeout(() => copyBtn.textContent = 'Copy path', 1000);
+                });
+                return;
+            }
+            if (targetBtn) {
+                ev.preventDefault();
+                if (ev.ctrlKey || ev.metaKey) {
+                    window.open(tile.href, '_blank');
+                } else {
+                    location.assign(tile.href);
+                }
+            }
+        });
+    });
+
+    const byKey = new Map();
+    document.querySelectorAll('.tile').forEach(tile => {
+        byKey.set(tile.dataset.key, tile);
+        byKey.set((tile.dataset.char || '').toLowerCase(), tile);
+    });
+
+    addEventListener('keydown', (e) => {
+        const tag = (e.target && e.target.tagName) || '';
+        if (/INPUT|TEXTAREA|SELECT/.test(tag)) return;
+
+        const key = e.key.toLowerCase();
+        const tile = byKey.get(key);
+        if (!tile) return;
+
+        e.preventDefault();
+        if (e.ctrlKey || e.metaKey) {
+            window.open(tile.href, '_blank');
+        } else {
+            location.assign(tile.href);
+        }
+    });
+</script>
 </body>
 </html>
